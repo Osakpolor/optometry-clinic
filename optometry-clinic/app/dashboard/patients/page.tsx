@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import PatientsTable from '@/components/PatientsTable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 
 export default async function PatientsPage() {
   const supabase = await createClient()
@@ -15,9 +17,14 @@ export default async function PatientsPage() {
     <main className="mx-auto max-w-5xl p-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Patients</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{patients?.length ?? 0} total records</p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Patients</h1>
+          <p className="mt-1 text-muted-foreground">
+            Search for a returning patient or register a new one — {patients?.length ?? 0} records total.
+          </p>
         </div>
+        <Link href="/dashboard/patients/new">
+          <Button>+ Register patient</Button>
+        </Link>
       </div>
 
       <Card>

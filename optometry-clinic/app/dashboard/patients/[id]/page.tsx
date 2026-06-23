@@ -53,22 +53,30 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
       </Link>
 
       {/* Patient header */}
-      <div className="mt-4 flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">{patient.full_name}</h1>
-          <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
-            {patient.legacy_id && <span>Patient #{patient.legacy_id}</span>}
-            {patient.sex && <span>{patient.sex}</span>}
-            {patient.date_of_birth && <span>DOB: {patient.date_of_birth}</span>}
-            {patient.phone && <span>{patient.phone}</span>}
-            {patient.phone2 && <span>{patient.phone2}</span>}
-          </div>
-          {patient.address && <p className="mt-1 text-sm text-muted-foreground">{patient.address}</p>}
-        </div>
-        <Link href={`/dashboard/patients/${id}/visits/new`}>
-          <Button size="sm">+ New visit</Button>
-        </Link>
-      </div>
+<div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+  <div>
+    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{patient.full_name}</h1>
+    <div className="mt-2 flex flex-wrap gap-2 sm:gap-3">
+      {patient.legacy_id && (
+        <Badge variant="outline" className="text-xs font-medium">Patient #{patient.legacy_id}</Badge>
+      )}
+      {patient.sex && (
+        <Badge variant="outline" className="text-xs">{patient.sex}</Badge>
+      )}
+      {patient.date_of_birth && (
+        <span className="text-sm text-muted-foreground">DOB: {patient.date_of_birth}</span>
+      )}
+    </div>
+    <div className="mt-2 flex flex-col gap-0.5">
+      {patient.phone && <span className="text-sm text-muted-foreground">{patient.phone}</span>}
+      {patient.phone2 && <span className="text-sm text-muted-foreground">{patient.phone2}</span>}
+      {patient.address && <span className="text-sm text-muted-foreground">{patient.address}</span>}
+    </div>
+  </div>
+  <Link href={`/dashboard/patients/${id}/visits/new`} className="shrink-0">
+    <Button size="sm" className="w-full sm:w-auto">+ New visit</Button>
+  </Link>
+</div>
 
       <div className="mt-8 flex flex-col gap-6">
         {/* Visit history */}
@@ -106,8 +114,11 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
 
         {/* Appointments */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base font-medium">Appointments</CardTitle>
+            <Link href={`/dashboard/patients/${id}/appointments/new`}>
+              <Button variant="outline" size="sm">+ Book slot</Button>
+            </Link>
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">

@@ -9,11 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit']
+const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit', 'Not sure yet']
 
-function SuccessPage({ fullName, service, date, time }: {
-  fullName: string; service: string; date: string; time: string
-}) {
+function SuccessPage({ fullName }: { fullName: string }) {
   const router = useRouter()
   const [seconds, setSeconds] = useState(5)
 
@@ -25,11 +23,10 @@ function SuccessPage({ fullName, service, date, time }: {
 
   return (
     <main className="mx-auto max-w-md px-6 py-20 text-center">
-      <div className="mb-4 text-4xl">✓</div>
-      <h1 className="text-2xl font-semibold">Booking confirmed</h1>
+      <div className="mb-4 text-5xl">✓</div>
+      <h1 className="text-2xl font-semibold">We'll be in touch!</h1>
       <p className="mt-3 text-gray-500">
-        Thanks, {fullName} — your {service.toLowerCase()} is booked for {date} at {time}.
-        We&apos;ll send a confirmation to your email.
+        Thanks {fullName} — we've received your request and will contact you shortly to confirm your appointment.
       </p>
       <p className="mt-6 text-sm text-gray-400">
         Redirecting to home in {seconds} second{seconds !== 1 ? 's' : ''}…
@@ -43,8 +40,6 @@ export default function BookPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [service, setService] = useState(SERVICES[0])
-  const [date, setDate] = useState('')
-  const [time, setTime] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -52,57 +47,35 @@ export default function BookPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!date || !time) {
-      setStatus('error')
-      setErrorMsg('Please choose both a date and a time.')
-      return
-    }
     setStatus('submitting')
     setErrorMsg('')
 
-    const patientId = crypto.randomUUID()
-    const { error: patientError } = await supabase
-      .from('patients')
-      .insert({ id: patientId, full_name: fullName, phone, email: email || null })
-
-    if (patientError) {
-      setStatus('error')
-      setErrorMsg(patientError.message)
-      return
-    }
-
-    const appointmentDateTime = new Date(`${date}T${time}`).toISOString()
-    const { error: appointmentError } = await supabase.from('appointments').insert({
-      patient_id: patientId,
-      appointment_date: appointmentDateTime,
-      service_type: service,
+    const { error } = await supabase.from('leads').insert({
+      full_name: fullName,
+      phone,
+      email: email || null,
+      service_interest: service,
     })
 
-    if (appointmentError) {
+    if (error) {
       setStatus('error')
-      setErrorMsg(appointmentError.message)
+      setErrorMsg(error.message)
       return
-    }
-
-    if (email) {
-      fetch('/api/send-confirmation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, fullName, service, date, time }),
-      }).catch(() => {})
     }
 
     setStatus('success')
   }
 
   if (status === 'success') {
-    return <SuccessPage fullName={fullName} service={service} date={date} time={time} />
+    return <SuccessPage fullName={fullName} />
   }
 
   return (
     <main className="mx-auto max-w-lg px-6 py-12">
       <h1 className="text-3xl font-semibold tracking-tight">Book an appointment</h1>
-      <p className="mt-2 text-gray-500">Fill in your details and we&apos;ll confirm your slot.</p>
+      <p className="mt-2 text-gray-500">
+        Leave your details and we'll call or WhatsApp you to confirm a time.
+      </p>
 
       <Card className="mt-8">
         <CardHeader>
@@ -112,21 +85,40 @@ export default function BookPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="fullName">Full name</Label>
-              <Input id="fullName" required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="e.g. Amaka Obi" />
+              <Input
+                id="fullName"
+                required
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder="Your full name"
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="phone">Phone number</Label>
-              <Input id="phone" required value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 08012345678" />
+              <Label htmlFor="phone">Phone number <span className="text-red-500">*</span></Label>
+              <Input
+                id="phone"
+                required
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="e.g. 08012345678"
+              />
+              <p className="text-xs text-gray-400">We'll use this to confirm your appointment via call or WhatsApp</p>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">Email address (optional)</Label>
-              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="for confirmation email" />
+              <Label htmlFor="email">Email address <span className="text-gray-400 font-normal">(optional)</span></Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="for appointment reminders"
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Service</Label>
+              <Label>Service needed</Label>
               <Select value={service} onValueChange={setService}>
                 <SelectTrigger>
                   <SelectValue />
@@ -139,19 +131,12 @@ export default function BookPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="date">Date</Label>
-                <Input id="date" required type="date" value={date} onChange={e => setDate(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="time">Time</Label>
-                <Input id="time" required type="time" value={time} onChange={e => setTime(e.target.value)} />
-              </div>
+            <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
+              By submitting this form, you agree that Olu Eye Clinic may contact you to schedule your appointment. Your details are kept private and never shared.
             </div>
 
-            <Button type="submit" disabled={status === 'submitting'} className="w-full mt-2">
-              {status === 'submitting' ? 'Booking…' : 'Book appointment'}
+            <Button type="submit" disabled={status === 'submitting'} className="w-full">
+              {status === 'submitting' ? 'Submitting…' : 'Request appointment'}
             </Button>
 
             {status === 'error' && (

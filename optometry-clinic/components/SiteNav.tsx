@@ -1,6 +1,12 @@
+'use client'
+
+import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 
 export default function SiteNav() {
+  const pathname = usePathname()
+  if (pathname.startsWith('/dashboard')) return null
+
   return (
     <header className="border-b border-gray-200">
       <nav className="mx-auto flex max-w-4xl items-center justify-between p-4 text-sm">

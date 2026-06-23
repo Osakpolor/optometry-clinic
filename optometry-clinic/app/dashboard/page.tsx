@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import AppointmentsTable from '@/components/AppointmentsTable'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -40,82 +43,109 @@ export default async function DashboardPage() {
   ])
 
   return (
-    <main className="mx-auto max-w-4xl p-10">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        {today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-      </p>
-
-      {/* Stats cards */}
-      <div className="mt-6 grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Total patients</p>
-          <p className="mt-2 text-4xl font-semibold">{totalPatients ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Pending bookings</p>
-          <p className="mt-2 text-4xl font-semibold">{totalAppointments ?? 0}</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Today's appointments</p>
-          <p className="mt-2 text-4xl font-semibold">{todayAppointments?.length ?? 0}</p>
-        </div>
+    <main className="mx-auto max-w-5xl p-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
       </div>
 
-      {/* Today's appointments */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Today's appointments</h2>
-          <Link href="/dashboard" className="text-sm text-blue-600 hover:underline">
-            View all
-          </Link>
-        </div>
-        {todayAppointments && todayAppointments.length > 0 ? (
-          <AppointmentsTable appointments={todayAppointments} />
-        ) : (
-          <p className="mt-3 text-sm text-gray-400">No appointments scheduled for today.</p>
-        )}
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total patients</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-semibold">{totalPatients ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pending bookings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-semibold">{totalAppointments ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Today's appointments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-semibold">{todayAppointments?.length ?? 0}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Follow-ups due */}
-      <div className="mt-8">
-        <h2 className="text-lg font-medium">Follow-ups due this week</h2>
-        {followUps && followUps.length > 0 ? (
-          <ul className="mt-3 flex flex-col gap-2">
-            {followUps.map((f: any) => (
-              <li key={f.id} className="flex items-center justify-between rounded border border-orange-100 bg-orange-50 px-4 py-3 text-sm">
-                <Link href={`/dashboard/patients/${f.patient_id}`} className="font-medium text-orange-800 hover:underline">
-                  {f.patients?.full_name}
-                </Link>
-                <span className="text-orange-600">
-                  Follow-up: {new Date(f.follow_up_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm text-gray-400">No follow-ups due this week.</p>
-        )}
-      </div>
+      <div className="grid grid-cols-3 gap-6">
+        {/* Today's appointments — takes 2 cols */}
+        <div className="col-span-2 flex flex-col gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base font-medium">Today's appointments</CardTitle>
+              <Link href="/dashboard" className="text-sm text-blue-600 hover:underline">View all</Link>
+            </CardHeader>
+            <Separator />
+            <CardContent className="pt-4">
+              {todayAppointments && todayAppointments.length > 0 ? (
+                <AppointmentsTable appointments={todayAppointments} />
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">No appointments today.</p>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Recently added patients */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Recently added patients</h2>
-          <Link href="/dashboard/patients" className="text-sm text-blue-600 hover:underline">
-            View all
-          </Link>
+          {/* Recently added patients */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base font-medium">Recently added patients</CardTitle>
+              <Link href="/dashboard/patients" className="text-sm text-blue-600 hover:underline">View all</Link>
+            </CardHeader>
+            <Separator />
+            <CardContent className="pt-4">
+              <ul className="flex flex-col divide-y">
+                {recentPatients?.map(p => (
+                  <li key={p.id} className="flex items-center justify-between py-2.5">
+                    <Link href={`/dashboard/patients/${p.id}`} className="text-sm font-medium hover:underline">
+                      {p.full_name}
+                    </Link>
+                    <span className="text-sm text-muted-foreground">{p.phone ?? '—'}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
         </div>
-        <ul className="mt-3 flex flex-col gap-2">
-          {recentPatients?.map(p => (
-            <li key={p.id} className="flex items-center justify-between rounded border border-gray-200 px-4 py-3 text-sm">
-              <Link href={`/dashboard/patients/${p.id}`} className="font-medium hover:underline">
-                {p.full_name}
-              </Link>
-              <span className="text-gray-400">{p.phone ?? '—'}</span>
-            </li>
-          ))}
-        </ul>
+
+        {/* Follow-ups sidebar */}
+        <div className="col-span-1">
+          <Card className="h-full">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-medium">Follow-ups this week</CardTitle>
+            </CardHeader>
+            <Separator />
+            <CardContent className="pt-4">
+              {followUps && followUps.length > 0 ? (
+                <ul className="flex flex-col gap-3">
+                  {followUps.map((f: any) => (
+                    <li key={f.id} className="flex flex-col gap-1">
+                      <Link href={`/dashboard/patients/${f.patient_id}`} className="text-sm font-medium hover:underline">
+                        {f.patients?.full_name}
+                      </Link>
+                      <Badge variant="outline" className="w-fit text-xs text-orange-600 border-orange-200 bg-orange-50">
+                        {new Date(f.follow_up_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No follow-ups due.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </main>
   )

@@ -1,18 +1,23 @@
 import SignOutButton from '@/components/SignOutButton'
 import Link from 'next/link'
+import { Separator } from '@/components/ui/separator'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <header className="border-b border-gray-200">
-        <nav className="mx-auto flex max-w-4xl items-center justify-between p-4 text-sm">
-          <div className="flex gap-6">
-            <Link href="/dashboard" className="font-medium hover:underline">
-            Appointments
-            </Link>
-            <Link href="/dashboard/patients" className="hover:underline text-gray-600">
-              Patients
-            </Link>
+    <div className="min-h-screen bg-muted/30">
+      <header className="bg-background sticky top-0 z-10 border-b">
+        <nav className="mx-auto flex max-w-5xl items-center justify-between px-8 py-3">
+          <div className="flex items-center gap-6">
+            <span className="font-semibold text-sm">Olu Eye Clinic</span>
+            <Separator orientation="vertical" className="h-4" />
+            <div className="flex gap-5 text-sm">
+              <Link href="/dashboard" className="text-foreground font-medium hover:text-blue-600 transition-colors">
+                Dashboard
+              </Link>
+              <Link href="/dashboard/patients" className="text-muted-foreground hover:text-foreground transition-colors">
+                Patients
+              </Link>
+            </div>
           </div>
           <SignOutButton />
         </nav>

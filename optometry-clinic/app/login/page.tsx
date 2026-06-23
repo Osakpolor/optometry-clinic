@@ -3,6 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -16,36 +20,36 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setErrorMsg('')
-
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (error) {
-      setErrorMsg(error.message)
-      setLoading(false)
-      return
-    }
-
+    if (error) { setErrorMsg(error.message); setLoading(false); return }
     router.push('/dashboard')
     router.refresh()
   }
 
   return (
-    <main className="mx-auto max-w-sm p-10">
-      <h1 className="text-2xl font-semibold">Staff login</h1>
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Email</span>
-          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Password</span>
-          <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <button type="submit" disabled={loading} className="mt-2 rounded bg-black p-2 text-white disabled:opacity-50">
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-        {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
-      </form>
+    <main className="flex min-h-[80vh] items-center justify-center px-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Staff login</CardTitle>
+          <CardDescription>Sign in to access the clinic dashboard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="doctor@olueyeclinic.com" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" required type="password" value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+            <Button type="submit" disabled={loading} className="w-full mt-2">
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
+            {errorMsg && <p className="text-sm text-red-500 text-center">{errorMsg}</p>}
+          </form>
+        </CardContent>
+      </Card>
     </main>
   )
 }

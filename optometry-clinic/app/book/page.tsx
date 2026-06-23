@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit']
 
 function SuccessPage({ fullName, service, date, time }: {
   fullName: string; service: string; date: string; time: string
@@ -11,28 +18,25 @@ function SuccessPage({ fullName, service, date, time }: {
   const [seconds, setSeconds] = useState(5)
 
   useEffect(() => {
-    if (seconds <= 0) {
-      router.push('/')
-      return
-    }
+    if (seconds <= 0) { router.push('/'); return }
     const timer = setTimeout(() => setSeconds(s => s - 1), 1000)
     return () => clearTimeout(timer)
   }, [seconds, router])
 
   return (
-    <main className="mx-auto max-w-md p-10">
+    <main className="mx-auto max-w-md px-6 py-20 text-center">
+      <div className="mb-4 text-4xl">✓</div>
       <h1 className="text-2xl font-semibold">Booking confirmed</h1>
-      <p className="mt-2 text-gray-600">
-        Thanks, {fullName} — we&apos;ve booked your {service.toLowerCase()} for {date} at {time}.
+      <p className="mt-3 text-gray-500">
+        Thanks, {fullName} — your {service.toLowerCase()} is booked for {date} at {time}.
+        We&apos;ll send a confirmation to your email.
       </p>
-      <p className="mt-4 text-sm text-gray-400">
+      <p className="mt-6 text-sm text-gray-400">
         Redirecting to home in {seconds} second{seconds !== 1 ? 's' : ''}…
       </p>
     </main>
   )
 }
-
-const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit']
 
 export default function BookPage() {
   const [fullName, setFullName] = useState('')
@@ -46,97 +50,116 @@ export default function BookPage() {
 
   const supabase = createClient()
 
-async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault()
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!date || !time) {
+      setStatus('error')
+      setErrorMsg('Please choose both a date and a time.')
+      return
+    }
+    setStatus('submitting')
+    setErrorMsg('')
 
-  if (!date || !time) {
-    setStatus('error')
-    setErrorMsg('Please choose both a date and a time.')
-    return
+    const patientId = crypto.randomUUID()
+    const { error: patientError } = await supabase
+      .from('patients')
+      .insert({ id: patientId, full_name: fullName, phone, email: email || null })
+
+    if (patientError) {
+      setStatus('error')
+      setErrorMsg(patientError.message)
+      return
+    }
+
+    const appointmentDateTime = new Date(`${date}T${time}`).toISOString()
+    const { error: appointmentError } = await supabase.from('appointments').insert({
+      patient_id: patientId,
+      appointment_date: appointmentDateTime,
+      service_type: service,
+    })
+
+    if (appointmentError) {
+      setStatus('error')
+      setErrorMsg(appointmentError.message)
+      return
+    }
+
+    if (email) {
+      fetch('/api/send-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, fullName, service, date, time }),
+      }).catch(() => {})
+    }
+
+    setStatus('success')
   }
-
-  setStatus('submitting')
-  setErrorMsg('')
-
-  const patientId = crypto.randomUUID()
-
-  const { error: patientError } = await supabase
-    .from('patients')
-    .insert({ id: patientId, full_name: fullName, phone, email: email || null })
-
-  if (patientError) {
-    setStatus('error')
-    setErrorMsg(patientError.message)
-    return
-  }
-
-  const appointmentDateTime = new Date(`${date}T${time}`).toISOString()
-
-  const { error: appointmentError } = await supabase.from('appointments').insert({
-    patient_id: patientId,
-    appointment_date: appointmentDateTime,
-    service_type: service,
-  })
-
-  if (appointmentError) {
-    setStatus('error')
-    setErrorMsg(appointmentError.message)
-    return
-  }
-
-  if (email) {
-  fetch('/api/send-confirmation', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, fullName, service, date, time }),
-  }).catch(() => {})
-}
-  setStatus('success')
-}
 
   if (status === 'success') {
-  return (
-    <SuccessPage fullName={fullName} service={service} date={date} time={time} />
-  )
-}
+    return <SuccessPage fullName={fullName} service={service} date={date} time={time} />
+  }
 
   return (
-    <main className="mx-auto max-w-md p-10">
-      <h1 className="text-2xl font-semibold">Book an appointment</h1>
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Full name</span>
-          <input required value={fullName} onChange={(e) => setFullName(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Phone number</span>
-          <input required value={phone} onChange={(e) => setPhone(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Email (optional)</span>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Service</span>
-          <select value={service} onChange={(e) => setService(e.target.value)} className="rounded border border-gray-300 p-2">
-            {SERVICES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Date</span>
-          <input required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Time</span>
-          <input required type="time" value={time} onChange={(e) => setTime(e.target.value)} className="rounded border border-gray-300 p-2" />
-        </label>
-        <button type="submit" disabled={status === 'submitting'} className="mt-2 rounded bg-black p-2 text-white disabled:opacity-50">
-          {status === 'submitting' ? 'Booking…' : 'Book appointment'}
-        </button>
-        {status === 'error' && <p className="text-sm text-red-600">{errorMsg}</p>}
-      </form>
+    <main className="mx-auto max-w-lg px-6 py-12">
+      <h1 className="text-3xl font-semibold tracking-tight">Book an appointment</h1>
+      <p className="mt-2 text-gray-500">Fill in your details and we&apos;ll confirm your slot.</p>
+
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle className="text-base font-medium">Your details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="fullName">Full name</Label>
+              <Input id="fullName" required value={fullName} onChange={e => setFullName(e.target.value)} placeholder="e.g. Amaka Obi" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="phone">Phone number</Label>
+              <Input id="phone" required value={phone} onChange={e => setPhone(e.target.value)} placeholder="e.g. 08012345678" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email address (optional)</Label>
+              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="for confirmation email" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Service</Label>
+              <Select value={service} onValueChange={setService}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SERVICES.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="date">Date</Label>
+                <Input id="date" required type="date" value={date} onChange={e => setDate(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="time">Time</Label>
+                <Input id="time" required type="time" value={time} onChange={e => setTime(e.target.value)} />
+              </div>
+            </div>
+
+            <Button type="submit" disabled={status === 'submitting'} className="w-full mt-2">
+              {status === 'submitting' ? 'Booking…' : 'Book appointment'}
+            </Button>
+
+            {status === 'error' && (
+              <p className="text-sm text-red-500 text-center">{errorMsg}</p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
     </main>
   )
 }

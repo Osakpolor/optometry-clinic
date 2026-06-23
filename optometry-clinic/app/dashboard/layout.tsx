@@ -8,7 +8,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <nav className="mx-auto flex max-w-4xl items-center justify-between p-4 text-sm">
           <div className="flex gap-6">
             <Link href="/dashboard" className="font-medium hover:underline">
-              Appointments
+            Appointments
             </Link>
             <Link href="/dashboard/patients" className="hover:underline text-gray-600">
               Patients

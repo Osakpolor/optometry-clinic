@@ -1,7 +1,36 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+
+function SuccessPage({ fullName, service, date, time }: {
+  fullName: string; service: string; date: string; time: string
+}) {
+  const router = useRouter()
+  const [seconds, setSeconds] = useState(5)
+
+  useEffect(() => {
+    if (seconds <= 0) {
+      router.push('/')
+      return
+    }
+    const timer = setTimeout(() => setSeconds(s => s - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [seconds, router])
+
+  return (
+    <main className="mx-auto max-w-md p-10">
+      <h1 className="text-2xl font-semibold">Booking confirmed</h1>
+      <p className="mt-2 text-gray-600">
+        Thanks, {fullName} — we&apos;ve booked your {service.toLowerCase()} for {date} at {time}.
+      </p>
+      <p className="mt-4 text-sm text-gray-400">
+        Redirecting to home in {seconds} second{seconds !== 1 ? 's' : ''}…
+      </p>
+    </main>
+  )
+}
 
 const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit']
 
@@ -66,15 +95,10 @@ async function handleSubmit(e: React.FormEvent) {
 }
 
   if (status === 'success') {
-    return (
-      <main className="mx-auto max-w-md p-10">
-        <h1 className="text-2xl font-semibold">Booking confirmed</h1>
-        <p className="mt-2 text-gray-600">
-          Thanks, {fullName} — we&apos;ve booked your {service.toLowerCase()} for {date} at {time}.
-        </p>
-      </main>
-    )
-  }
+  return (
+    <SuccessPage fullName={fullName} service={service} date={date} time={time} />
+  )
+}
 
   return (
     <main className="mx-auto max-w-md p-10">

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
+import Link from 'next/link'
 
 const STATUSES = ['booked', 'confirmed', 'completed', 'no_show', 'cancelled']
 
@@ -35,7 +36,9 @@ export default function AppointmentsTable({ appointments }: { appointments: any[
           <div key={appt.id} className="py-3 flex flex-col gap-2">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-sm font-medium">{appt.patients?.full_name}</p>
+                <Link href={`/dashboard/patients/${appt.patient_id}`} className="text-sm font-medium hover:bg-gray-100 hover:shadow-sm rounded px-2 py-1 -mx-2 transition-all">
+                  {appt.patients?.full_name}
+                </Link>
                 <p className="text-xs text-muted-foreground">{appt.patients?.phone}</p>
                 <p className="text-xs text-muted-foreground">{appt.service_type}</p>
                 <p className="text-xs text-muted-foreground">
@@ -72,7 +75,11 @@ export default function AppointmentsTable({ appointments }: { appointments: any[
         <tbody>
           {appointments.map(appt => (
             <tr key={appt.id} className="border-b border-gray-100">
-              <td className="py-2.5 pr-4 font-medium">{appt.patients?.full_name}</td>
+              <td className="py-2.5 pr-4 font-medium">
+                <Link href={`/dashboard/patients/${appt.patient_id}`} className="hover:bg-gray-100 hover:shadow-sm rounded px-2 py-1 -mx-2 transition-all">
+                  {appt.patients?.full_name}
+                </Link>
+              </td>
               <td className="py-2.5 pr-4 text-muted-foreground">{appt.patients?.phone}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">{appt.service_type}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">

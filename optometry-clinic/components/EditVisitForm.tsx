@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -45,9 +46,10 @@ function SuffixInput({ label, value, onChange, suffix, colorClass }: { label?: s
 }
 
 function FractionInput({ label, value, onChange, addValue, onAddChange, colorClass }: { label?: string; value: string; onChange: (v: string) => void; addValue: string; onAddChange: (v: string) => void; colorClass: string }) {
+  const isOD = colorClass.includes('pink')
   return (
-    <label className="flex flex-col gap-1">
-      {label && <span className="text-xs text-gray-500">{label}</span>}
+    <div className="flex flex-col gap-1">
+      {label && <span className={`text-xs font-medium sm:hidden ${isOD ? 'text-pink-400' : 'text-green-500'}`}>{label}</span>}
       <div className="flex items-center gap-1">
         <div className={`flex items-center rounded border text-sm overflow-hidden ${colorClass} flex-1`}>
           <span className="pl-1.5 text-xs text-gray-400 select-none">6/</span>
@@ -57,19 +59,20 @@ function FractionInput({ label, value, onChange, addValue, onAddChange, colorCla
           <input value={addValue} onChange={e => onAddChange(e.target.value)} className="flex-1 bg-transparent p-1.5 outline-none w-0 min-w-0" placeholder="add" />
         </div>
       </div>
-    </label>
+    </div>
   )
 }
 
 function NearInput({ label, value, onChange, colorClass }: { label?: string; value: string; onChange: (v: string) => void; colorClass: string }) {
+  const isOD = colorClass.includes('pink')
   return (
-    <label className="flex flex-col gap-1">
-      {label && <span className="text-xs text-gray-500">{label}</span>}
+    <div className="flex flex-col gap-1">
+      {label && <span className={`text-xs font-medium sm:hidden ${isOD ? 'text-pink-400' : 'text-green-500'}`}>{label}</span>}
       <div className={`flex items-center rounded border text-sm overflow-hidden ${colorClass}`}>
         <span className="pl-1.5 text-xs text-gray-400 select-none">N</span>
         <input value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-transparent p-1.5 outline-none w-0 min-w-0" />
       </div>
-    </label>
+    </div>
   )
 }
 
@@ -79,7 +82,7 @@ const OS_CLASS = 'border-green-200 bg-green-50'
 function OD({ label, value, onChange }: { label?: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1">
-      {label && <span className="text-xs text-gray-500">{label}</span>}
+      {label && <span className="text-xs text-pink-400 font-medium sm:hidden">{label}</span>}
       <input value={value} onChange={e => onChange(e.target.value)} className="rounded border border-pink-200 bg-pink-50 p-1.5 text-sm w-full" />
     </label>
   )
@@ -88,7 +91,7 @@ function OD({ label, value, onChange }: { label?: string; value: string; onChang
 function OS({ label, value, onChange }: { label?: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="flex flex-col gap-1">
-      {label && <span className="text-xs text-gray-500">{label}</span>}
+      {label && <span className="text-xs text-green-500 font-medium sm:hidden">{label}</span>}
       <input value={value} onChange={e => onChange(e.target.value)} className="rounded border border-green-200 bg-green-50 p-1.5 text-sm w-full" />
     </label>
   )
@@ -115,6 +118,25 @@ function ODOSHeader() {
   )
 }
 
+function EyeRow({ label, odContent, osContent }: { label: string; odContent: React.ReactNode; osContent: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-2 items-end">
+      <span className="text-xs text-gray-500 self-center col-span-2 sm:col-span-1">{label}</span>
+      <div className="sm:col-span-2">{odContent}</div>
+      <div className="sm:col-span-2">{osContent}</div>
+    </div>
+  )
+}
+
+function EyeColHeaders() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:hidden mb-1">
+      <span className="text-xs font-semibold text-pink-400 text-center">OD (Right)</span>
+      <span className="text-xs font-semibold text-green-500 text-center">OS (Left)</span>
+    </div>
+  )
+}
+
 export default function EditVisitForm({ patientId, visitId, visit }: { patientId: string; visitId: string; visit: any }) {
   const router = useRouter()
   const supabase = createClient()
@@ -130,7 +152,6 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [age, setAge] = useState(visit.age_at_visit ?? '')
   const [bp, setBp] = useState(visit.bp ?? '')
   const [hasPrx, setHasPrx] = useState(r.has_prx ?? 'No')
-
   const [sphPrxOD, setSphPrxOD] = useState(r.sph_prx_od ?? '')
   const [cylPrxOD, setCylPrxOD] = useState(r.cyl_prx_od ?? '')
   const [axisPrxOD, setAxisPrxOD] = useState(strip(r.axis_prx_od, '°'))
@@ -139,7 +160,6 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [cylPrxOS, setCylPrxOS] = useState(r.cyl_prx_os ?? '')
   const [axisPrxOS, setAxisPrxOS] = useState(strip(r.axis_prx_os, '°'))
   const [addPrxOS, setAddPrxOS] = useState(r.add_prx_os ?? '')
-
   const [vaType, setVaType] = useState(e.va_type ?? 'Analog')
   const [vaChart, setVaChart] = useState(e.va_chart ?? 'Snellen')
   const [vaFarOD, setVaFarOD] = useState(strip(e.va_far_od, ''))
@@ -158,17 +178,14 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [pxVaFarOSAdd, setPxVaFarOSAdd] = useState(e.px_va_far_os_add ?? '')
   const [pxVaNearOD, setPxVaNearOD] = useState(strip(e.px_va_near_od, ''))
   const [pxVaNearOS, setPxVaNearOS] = useState(strip(e.px_va_near_os, ''))
-
   const [sphAutoOD, setSphAutoOD] = useState(r.sph_auto_od ?? '')
   const [cylAutoOD, setCylAutoOD] = useState(r.cyl_auto_od ?? '')
   const [axisAutoOD, setAxisAutoOD] = useState(strip(r.axis_auto_od, '°'))
   const [sphAutoOS, setSphAutoOS] = useState(r.sph_auto_os ?? '')
   const [cylAutoOS, setCylAutoOS] = useState(r.cyl_auto_os ?? '')
   const [axisAutoOS, setAxisAutoOS] = useState(strip(r.axis_auto_os, '°'))
-
   const [iopOD, setIopOD] = useState(strip(e.iop_od, 'mmHg'))
   const [iopOS, setIopOS] = useState(strip(e.iop_os, 'mmHg'))
-
   const [lidOD, setLidOD] = useState(ant.lid_od ?? '')
   const [conjOD, setConjOD] = useState(ant.conjunctiva_od ?? '')
   const [corneaOD, setCorneaOD] = useState(ant.cornea_od ?? '')
@@ -181,21 +198,18 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [irisOS, setIrisOS] = useState(ant.iris_os ?? '')
   const [pupilOS, setPupilOS] = useState(ant.pupil_os ?? '')
   const [lensOS, setLensOS] = useState(ant.lens_os ?? '')
-
   const [discOD, setDiscOD] = useState(post.disc_od ?? '')
   const [discOS, setDiscOS] = useState(post.disc_os ?? '')
   const [cupOD, setCupOD] = useState(strip(post.cup_od, '%'))
   const [cupOS, setCupOS] = useState(strip(post.cup_os, '%'))
   const [maculaOD, setMaculaOD] = useState(post.macula_od ?? '')
   const [maculaOS, setMaculaOS] = useState(post.macula_os ?? '')
-
   const [sphRetOD, setSphRetOD] = useState(r.sph_ret_od ?? '')
   const [cylRetOD, setCylRetOD] = useState(r.cyl_ret_od ?? '')
   const [axisRetOD, setAxisRetOD] = useState(strip(r.axis_ret_od, '°'))
   const [sphRetOS, setSphRetOS] = useState(r.sph_ret_os ?? '')
   const [cylRetOS, setCylRetOS] = useState(r.cyl_ret_os ?? '')
   const [axisRetOS, setAxisRetOS] = useState(strip(r.axis_ret_os, '°'))
-
   const [sphFinalOD, setSphFinalOD] = useState(r.sph_final_od ?? '')
   const [cylFinalOD, setCylFinalOD] = useState(r.cyl_final_od ?? '')
   const [axisFinalOD, setAxisFinalOD] = useState(strip(r.axis_final_od, '°'))
@@ -204,7 +218,6 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [cylFinalOS, setCylFinalOS] = useState(r.cyl_final_os ?? '')
   const [axisFinalOS, setAxisFinalOS] = useState(strip(r.axis_final_os, '°'))
   const [addFinalOS, setAddFinalOS] = useState(r.add_final_os ?? '')
-
   const [diagnosis, setDiagnosis] = useState(visit.diagnosis ?? '')
   const [drugs, setDrugs] = useState<Drug[]>(
     meds.length > 0
@@ -227,17 +240,10 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
     ev.preventDefault()
     setSaving(true)
     setErrorMsg('')
-
-    const medsList = drugs.filter(d => d.name || d.type).map(d => ({
-      type: d.type || null, name: d.name || null, freq: d.freq || null
-    }))
-
+    const medsList = drugs.filter(d => d.name || d.type).map(d => ({ type: d.type || null, name: d.name || null, freq: d.freq || null }))
     const { error } = await supabase.from('visit_records').update({
-      reason_for_visit: reasonForVisit || null,
-      symptoms_presented: symptoms || null,
-      last_eye_exam: lastEyeExam || null,
-      age_at_visit: age || null,
-      bp: bp || null,
+      reason_for_visit: reasonForVisit || null, symptoms_presented: symptoms || null,
+      last_eye_exam: lastEyeExam || null, age_at_visit: age || null, bp: bp || null,
       eye_test_results: {
         va_type: vaType, va_chart: vaChart,
         va_far_od: vaFarOD ? `6/${vaFarOD}` : null, va_far_od_add: vaFarODAdd || null,
@@ -275,11 +281,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       medications: medsList,
       diagnosis: diagnosis || null,
       referral: hasReferral === 'Yes' ? referralFor : null,
-      ref_date: refDate || null,
-      notes: notes || null,
+      ref_date: refDate || null, notes: notes || null,
       updated_at: new Date().toISOString(),
     }).eq('id', visitId)
-
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
     router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
@@ -288,6 +292,7 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 text-sm">
+
       <SectionHeader title="Presenting Complaint" />
       <div className="grid grid-cols-2 gap-4">
         <TextInput label="Age" value={age} onChange={setAge} />
@@ -299,20 +304,12 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
 
       <SectionHeader title="Prescription?" />
       <Sel label="Prescription?" value={hasPrx} onChange={setHasPrx} options={['No', 'Yes']} />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500">Sphere</span>
-        <OD value={sphPrxOD} onChange={setSphPrxOD} /><div />
-        <OS value={sphPrxOS} onChange={setSphPrxOS} /><div />
-        <span className="text-xs text-gray-500">Cylinder</span>
-        <OD value={cylPrxOD} onChange={setCylPrxOD} /><div />
-        <OS value={cylPrxOS} onChange={setCylPrxOS} /><div />
-        <span className="text-xs text-gray-500">Axis</span>
-        <SuffixInput value={axisPrxOD} onChange={setAxisPrxOD} suffix="°" colorClass={OD_CLASS} /><div />
-        <SuffixInput value={axisPrxOS} onChange={setAxisPrxOS} suffix="°" colorClass={OS_CLASS} /><div />
-        <span className="text-xs text-gray-500">Add</span>
-        <OD value={addPrxOD} onChange={setAddPrxOD} /><div />
-        <OS value={addPrxOS} onChange={setAddPrxOS} /><div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Sphere" odContent={<OD value={sphPrxOD} onChange={setSphPrxOD} label="OD" />} osContent={<OS value={sphPrxOS} onChange={setSphPrxOS} label="OS" />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylPrxOD} onChange={setCylPrxOD} label="OD" />} osContent={<OS value={cylPrxOS} onChange={setCylPrxOS} label="OS" />} />
+        <EyeRow label="Axis" odContent={<SuffixInput value={axisPrxOD} onChange={setAxisPrxOD} suffix="°" colorClass={OD_CLASS} label="OD" />} osContent={<SuffixInput value={axisPrxOS} onChange={setAxisPrxOS} suffix="°" colorClass={OS_CLASS} label="OS" />} />
+        <EyeRow label="Add" odContent={<OD value={addPrxOD} onChange={setAddPrxOD} label="OD" />} osContent={<OS value={addPrxOS} onChange={setAddPrxOS} label="OS" />} />
       </div>
 
       <SectionHeader title="Visual Acuity" />
@@ -320,48 +317,28 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
         <Sel label="Type" value={vaType} onChange={setVaType} options={VA_TYPES} />
         <Sel label="Chart used" value={vaChart} onChange={setVaChart} options={CHARTS} />
       </div>
+
       <p className="text-xs font-semibold uppercase text-gray-400 mt-2">Without Correction</p>
-      <div className="grid grid-cols-5 gap-2 items-end">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500 self-center">@Far</span>
-        <FractionInput value={vaFarOD} onChange={setVaFarOD} addValue={vaFarODAdd} onAddChange={setVaFarODAdd} colorClass={OD_CLASS} />
-        <div />
-        <FractionInput value={vaFarOS} onChange={setVaFarOS} addValue={vaFarOSAdd} onAddChange={setVaFarOSAdd} colorClass={OS_CLASS} />
-        <div />
-        <span className="text-xs text-gray-500 self-center">@Near</span>
-        <NearInput value={vaNearOD} onChange={setVaNearOD} colorClass={OD_CLASS} /><div />
-        <NearInput value={vaNearOS} onChange={setVaNearOS} colorClass={OS_CLASS} /><div />
-        <span className="text-xs text-gray-500 self-center">Pin Hole</span>
-        <FractionInput value={vaPinholeOD} onChange={setVaPinholeOD} addValue={vaPinholeODAdd} onAddChange={setVaPinholeODAdd} colorClass={OD_CLASS} />
-        <div />
-        <FractionInput value={vaPinholeOS} onChange={setVaPinholeOS} addValue={vaPinholeOSAdd} onAddChange={setVaPinholeOSAdd} colorClass={OS_CLASS} />
-        <div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="@Far" odContent={<FractionInput value={vaFarOD} onChange={setVaFarOD} addValue={vaFarODAdd} onAddChange={setVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaFarOS} onChange={setVaFarOS} addValue={vaFarOSAdd} onAddChange={setVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Near" odContent={<NearInput value={vaNearOD} onChange={setVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={vaNearOS} onChange={setVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="Pin Hole" odContent={<FractionInput value={vaPinholeOD} onChange={setVaPinholeOD} addValue={vaPinholeODAdd} onAddChange={setVaPinholeODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaPinholeOS} onChange={setVaPinholeOS} addValue={vaPinholeOSAdd} onAddChange={setVaPinholeOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
+
       <p className="text-xs font-semibold uppercase text-gray-400 mt-2">With Correction</p>
-      <div className="grid grid-cols-5 gap-2 items-end">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500 self-center">@Far</span>
-        <FractionInput value={pxVaFarOD} onChange={setPxVaFarOD} addValue={pxVaFarODAdd} onAddChange={setPxVaFarODAdd} colorClass={OD_CLASS} />
-        <div />
-        <FractionInput value={pxVaFarOS} onChange={setPxVaFarOS} addValue={pxVaFarOSAdd} onAddChange={setPxVaFarOSAdd} colorClass={OS_CLASS} />
-        <div />
-        <span className="text-xs text-gray-500 self-center">@Near</span>
-        <NearInput value={pxVaNearOD} onChange={setPxVaNearOD} colorClass={OD_CLASS} /><div />
-        <NearInput value={pxVaNearOS} onChange={setPxVaNearOS} colorClass={OS_CLASS} /><div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="@Far" odContent={<FractionInput value={pxVaFarOD} onChange={setPxVaFarOD} addValue={pxVaFarODAdd} onAddChange={setPxVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={pxVaFarOS} onChange={setPxVaFarOS} addValue={pxVaFarOSAdd} onAddChange={setPxVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Near" odContent={<NearInput value={pxVaNearOD} onChange={setPxVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={pxVaNearOS} onChange={setPxVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
       <SectionHeader title="Auto-Refraction" />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500">Sphere</span>
-        <OD value={sphAutoOD} onChange={setSphAutoOD} /><div />
-        <OS value={sphAutoOS} onChange={setSphAutoOS} /><div />
-        <span className="text-xs text-gray-500">Cylinder</span>
-        <OD value={cylAutoOD} onChange={setCylAutoOD} /><div />
-        <OS value={cylAutoOS} onChange={setCylAutoOS} /><div />
-        <span className="text-xs text-gray-500">Axis</span>
-        <SuffixInput value={axisAutoOD} onChange={setAxisAutoOD} suffix="°" colorClass={OD_CLASS} /><div />
-        <SuffixInput value={axisAutoOS} onChange={setAxisAutoOS} suffix="°" colorClass={OS_CLASS} /><div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Sphere" odContent={<OD value={sphAutoOD} onChange={setSphAutoOD} label="OD" />} osContent={<OS value={sphAutoOS} onChange={setSphAutoOS} label="OS" />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylAutoOD} onChange={setCylAutoOD} label="OD" />} osContent={<OS value={cylAutoOS} onChange={setCylAutoOS} label="OS" />} />
+        <EyeRow label="Axis" odContent={<SuffixInput value={axisAutoOD} onChange={setAxisAutoOD} suffix="°" colorClass={OD_CLASS} label="OD" />} osContent={<SuffixInput value={axisAutoOS} onChange={setAxisAutoOS} suffix="°" colorClass={OS_CLASS} label="OS" />} />
       </div>
 
       <SectionHeader title="IOP" />
@@ -371,81 +348,42 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       </div>
 
       <SectionHeader title="External Exam (Anterior Segment)" />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <div /><div className="col-span-2 text-center text-xs font-semibold text-pink-400">OD</div>
-        <div className="col-span-2 text-center text-xs font-semibold text-green-500">OS</div>
-        <span className="text-xs text-gray-500">Lid</span>
-        <div className="col-span-2"><OD value={lidOD} onChange={setLidOD} /></div>
-        <div className="col-span-2"><OS value={lidOS} onChange={setLidOS} /></div>
-        <span className="text-xs text-gray-500">Conjunctiva</span>
-        <div className="col-span-2"><OD value={conjOD} onChange={setConjOD} /></div>
-        <div className="col-span-2"><OS value={conjOS} onChange={setConjOS} /></div>
-        <span className="text-xs text-gray-500">Cornea</span>
-        <div className="col-span-2"><OD value={corneaOD} onChange={setCorneaOD} /></div>
-        <div className="col-span-2"><OS value={corneaOS} onChange={setCorneaOS} /></div>
-        <span className="text-xs text-gray-500">Iris</span>
-        <div className="col-span-2"><OD value={irisOD} onChange={setIrisOD} /></div>
-        <div className="col-span-2"><OS value={irisOS} onChange={setIrisOS} /></div>
-        <span className="text-xs text-gray-500">Pupil</span>
-        <div className="col-span-2"><OD value={pupilOD} onChange={setPupilOD} /></div>
-        <div className="col-span-2"><OS value={pupilOS} onChange={setPupilOS} /></div>
-        <span className="text-xs text-gray-500">Lens</span>
-        <div className="col-span-2"><OD value={lensOD} onChange={setLensOD} /></div>
-        <div className="col-span-2"><OS value={lensOS} onChange={setLensOS} /></div>
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Lid" odContent={<OD value={lidOD} onChange={setLidOD} label="OD" />} osContent={<OS value={lidOS} onChange={setLidOS} label="OS" />} />
+        <EyeRow label="Conjunctiva" odContent={<OD value={conjOD} onChange={setConjOD} label="OD" />} osContent={<OS value={conjOS} onChange={setConjOS} label="OS" />} />
+        <EyeRow label="Cornea" odContent={<OD value={corneaOD} onChange={setCorneaOD} label="OD" />} osContent={<OS value={corneaOS} onChange={setCorneaOS} label="OS" />} />
+        <EyeRow label="Iris" odContent={<OD value={irisOD} onChange={setIrisOD} label="OD" />} osContent={<OS value={irisOS} onChange={setIrisOS} label="OS" />} />
+        <EyeRow label="Pupil" odContent={<OD value={pupilOD} onChange={setPupilOD} label="OD" />} osContent={<OS value={pupilOS} onChange={setPupilOS} label="OS" />} />
+        <EyeRow label="Lens" odContent={<OD value={lensOD} onChange={setLensOD} label="OD" />} osContent={<OS value={lensOS} onChange={setLensOS} label="OS" />} />
       </div>
 
       <SectionHeader title="Ophthalmoscopy (Posterior Segment)" />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <div /><div className="col-span-2 text-center text-xs font-semibold text-pink-400">OD</div>
-        <div className="col-span-2 text-center text-xs font-semibold text-green-500">OS</div>
-        <span className="text-xs text-gray-500">Disc</span>
-        <div className="col-span-2">
-          <select value={discOD} onChange={e => setDiscOD(e.target.value)} className="w-full rounded border border-pink-200 bg-pink-50 p-1.5 text-sm">
-            {DISC_TYPES.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-          </select>
-        </div>
-        <div className="col-span-2">
-          <select value={discOS} onChange={e => setDiscOS(e.target.value)} className="w-full rounded border border-green-200 bg-green-50 p-1.5 text-sm">
-            {DISC_TYPES.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-          </select>
-        </div>
-        <span className="text-xs text-gray-500">Cupping</span>
-        <div className="col-span-2"><SuffixInput value={cupOD} onChange={setCupOD} suffix="%" colorClass={OD_CLASS} /></div>
-        <div className="col-span-2"><SuffixInput value={cupOS} onChange={setCupOS} suffix="%" colorClass={OS_CLASS} /></div>
-        <span className="text-xs text-gray-500">Macula</span>
-        <div className="col-span-2"><OD value={maculaOD} onChange={setMaculaOD} /></div>
-        <div className="col-span-2"><OS value={maculaOS} onChange={setMaculaOS} /></div>
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Disc"
+          odContent={<div className="flex flex-col gap-1"><span className="text-xs text-pink-400 font-medium sm:hidden">OD</span><select value={discOD} onChange={e => setDiscOD(e.target.value)} className="w-full rounded border border-pink-200 bg-pink-50 p-1.5 text-sm">{DISC_TYPES.map(o => <option key={o} value={o}>{o || '—'}</option>)}</select></div>}
+          osContent={<div className="flex flex-col gap-1"><span className="text-xs text-green-500 font-medium sm:hidden">OS</span><select value={discOS} onChange={e => setDiscOS(e.target.value)} className="w-full rounded border border-green-200 bg-green-50 p-1.5 text-sm">{DISC_TYPES.map(o => <option key={o} value={o}>{o || '—'}</option>)}</select></div>}
+        />
+        <EyeRow label="Cupping" odContent={<SuffixInput value={cupOD} onChange={setCupOD} suffix="%" colorClass={OD_CLASS} label="OD" />} osContent={<SuffixInput value={cupOS} onChange={setCupOS} suffix="%" colorClass={OS_CLASS} label="OS" />} />
+        <EyeRow label="Macula" odContent={<OD value={maculaOD} onChange={setMaculaOD} label="OD" />} osContent={<OS value={maculaOS} onChange={setMaculaOS} label="OS" />} />
       </div>
 
       <SectionHeader title="Retinoscopy" />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500">Sphere</span>
-        <OD value={sphRetOD} onChange={setSphRetOD} /><div />
-        <OS value={sphRetOS} onChange={setSphRetOS} /><div />
-        <span className="text-xs text-gray-500">Cylinder</span>
-        <OD value={cylRetOD} onChange={setCylRetOD} /><div />
-        <OS value={cylRetOS} onChange={setCylRetOS} /><div />
-        <span className="text-xs text-gray-500">Axis</span>
-        <SuffixInput value={axisRetOD} onChange={setAxisRetOD} suffix="°" colorClass={OD_CLASS} /><div />
-        <SuffixInput value={axisRetOS} onChange={setAxisRetOS} suffix="°" colorClass={OS_CLASS} /><div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Sphere" odContent={<OD value={sphRetOD} onChange={setSphRetOD} label="OD" />} osContent={<OS value={sphRetOS} onChange={setSphRetOS} label="OS" />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylRetOD} onChange={setCylRetOD} label="OD" />} osContent={<OS value={cylRetOS} onChange={setCylRetOS} label="OS" />} />
+        <EyeRow label="Axis" odContent={<SuffixInput value={axisRetOD} onChange={setAxisRetOD} suffix="°" colorClass={OD_CLASS} label="OD" />} osContent={<SuffixInput value={axisRetOS} onChange={setAxisRetOS} suffix="°" colorClass={OS_CLASS} label="OS" />} />
       </div>
 
       <SectionHeader title="Final Prescription" />
-      <div className="grid grid-cols-5 gap-2 items-center">
-        <ODOSHeader />
-        <span className="text-xs text-gray-500">Sphere</span>
-        <OD value={sphFinalOD} onChange={setSphFinalOD} /><div />
-        <OS value={sphFinalOS} onChange={setSphFinalOS} /><div />
-        <span className="text-xs text-gray-500">Cylinder</span>
-        <OD value={cylFinalOD} onChange={setCylFinalOD} /><div />
-        <OS value={cylFinalOS} onChange={setCylFinalOS} /><div />
-        <span className="text-xs text-gray-500">Axis</span>
-        <SuffixInput value={axisFinalOD} onChange={setAxisFinalOD} suffix="°" colorClass={OD_CLASS} /><div />
-        <SuffixInput value={axisFinalOS} onChange={setAxisFinalOS} suffix="°" colorClass={OS_CLASS} /><div />
-        <span className="text-xs text-gray-500">Add</span>
-        <OD value={addFinalOD} onChange={setAddFinalOD} /><div />
-        <OS value={addFinalOS} onChange={setAddFinalOS} /><div />
+      <EyeColHeaders />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Sphere" odContent={<OD value={sphFinalOD} onChange={setSphFinalOD} label="OD" />} osContent={<OS value={sphFinalOS} onChange={setSphFinalOS} label="OS" />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylFinalOD} onChange={setCylFinalOD} label="OD" />} osContent={<OS value={cylFinalOS} onChange={setCylFinalOS} label="OS" />} />
+        <EyeRow label="Axis" odContent={<SuffixInput value={axisFinalOD} onChange={setAxisFinalOD} suffix="°" colorClass={OD_CLASS} label="OD" />} osContent={<SuffixInput value={axisFinalOS} onChange={setAxisFinalOS} suffix="°" colorClass={OS_CLASS} label="OS" />} />
+        <EyeRow label="Add" odContent={<OD value={addFinalOD} onChange={setAddFinalOD} label="OD" />} osContent={<OS value={addFinalOS} onChange={setAddFinalOS} label="OS" />} />
       </div>
 
       <SectionHeader title="Diagnosis" />
@@ -468,7 +406,7 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       ))}
 
       <SectionHeader title="Referral" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Sel label="Referral?" value={hasReferral} onChange={setHasReferral} options={['No', 'Yes']} />
         <label className="flex flex-col gap-1">
           <span className="text-xs font-medium text-gray-600">For</span>

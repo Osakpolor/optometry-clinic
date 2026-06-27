@@ -56,7 +56,7 @@ export default function VisitDocuments({ visitId, patientId }: Props) {
       console.error(error)
     } else {
       // Filter out the empty placeholder Supabase sometimes adds
-      setFiles((data ?? []).filter(f => f.name !== '.emptyFolderPlaceholder'))
+      setFiles((data ?? []).filter(f => f.name !== '.emptyFolderPlaceholder') as StorageFile[])
     }
     setLoading(false)
   }

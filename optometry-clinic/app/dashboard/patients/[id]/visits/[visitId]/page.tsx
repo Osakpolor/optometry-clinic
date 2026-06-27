@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import VisitDocuments from '@/components/visits/VisitDocuments'
+import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
 
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
@@ -53,7 +55,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
 
   if (error || !visit) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="w-full py-2">
         <p className="text-red-500 text-sm">Visit not found.</p>
       </main>
     )
@@ -67,7 +69,7 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
   const activeMeds = meds.filter(m => m.name || m.type)
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="w-full py-2">
       <Link href={`/dashboard/patients/${id}`} className="text-sm text-muted-foreground hover:underline">
         ← {patient?.full_name ?? 'Patient'}
       </Link>
@@ -89,9 +91,18 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
             </span>
           </div>
         </div>
-        <Link href={`/dashboard/patients/${id}/visits/${visitId}/edit`}>
-          <Button variant="outline" size="sm">Edit visit</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <ExportPrescriptionPDF
+            patient={{
+              full_name: patient?.full_name ?? 'Patient',
+              legacy_id: patient?.legacy_id,
+            }}
+            visit={visit}
+          />
+          <Link href={`/dashboard/patients/${id}/visits/${visitId}/edit`}>
+            <Button variant="outline" size="sm">Edit visit</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
@@ -261,6 +272,18 @@ export default async function VisitDetailPage({ params }: { params: Promise<{ id
             </ul>
           </div>
         )}
+
+        
+        {/* Documents */}
+        <div className="mt-2">
+          <div className="rounded-lg border border-border bg-white p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="text-sm font-semibold text-gray-700">Documents</h3>
+              <span className="text-xs text-muted-foreground">Scans, referral letters, PDFs</span>
+            </div>
+            <VisitDocuments visitId={visitId} patientId={id} />
+          </div>
+        </div>
 
         <div className="mt-2">
           <Link href={`/dashboard/patients/${id}/visits/new`}>

@@ -1,3 +1,5 @@
+// app/dashboard/patients/[id]/page.tsx
+
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import PatientNotes from '@/components/PatientNotes'
@@ -5,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
+import { EditPatientDialog } from '@/components/patients/EditPatientDialog'
 
 export default async function PatientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -32,7 +35,7 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
 
   if (patientError || !patient) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="w-full py-2">
         <p className="text-red-500 text-sm">Patient not found.</p>
       </main>
     )
@@ -47,36 +50,56 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="w-full py-2">
       <Link href="/dashboard/patients" className="text-sm text-muted-foreground hover:underline">
         ← All patients
       </Link>
 
       {/* Patient header */}
-<div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-  <div>
-    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{patient.full_name}</h1>
-    <div className="mt-2 flex flex-wrap gap-2 sm:gap-3">
-      {patient.legacy_id && (
-        <Badge variant="outline" className="text-xs font-medium">Patient #{patient.legacy_id}</Badge>
-      )}
-      {patient.sex && (
-        <Badge variant="outline" className="text-xs">{patient.sex}</Badge>
-      )}
-      {patient.date_of_birth && (
-        <span className="text-sm text-muted-foreground">DOB: {patient.date_of_birth}</span>
-      )}
-    </div>
-    <div className="mt-2 flex flex-col gap-0.5">
-      {patient.phone && <span className="text-sm text-muted-foreground">{patient.phone}</span>}
-      {patient.phone2 && <span className="text-sm text-muted-foreground">{patient.phone2}</span>}
-      {patient.address && <span className="text-sm text-muted-foreground">{patient.address}</span>}
-    </div>
-  </div>
-  <Link href={`/dashboard/patients/${id}/visits/new`} className="shrink-0">
-    <Button size="sm" className="w-full sm:w-auto">+ New visit</Button>
-  </Link>
-</div>
+      <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{patient.full_name}</h1>
+          <div className="mt-2 flex flex-wrap gap-2 sm:gap-3">
+            {patient.legacy_id && (
+              <Badge variant="outline" className="text-xs font-medium">Patient #{patient.legacy_id}</Badge>
+            )}
+            {patient.sex && (
+              <Badge variant="outline" className="text-xs">{patient.sex}</Badge>
+            )}
+            {patient.date_of_birth && (
+              <span className="text-sm text-muted-foreground">DOB: {patient.date_of_birth}</span>
+            )}
+          </div>
+          <div className="mt-2 flex flex-col gap-0.5">
+            {patient.phone && <span className="text-sm text-muted-foreground">{patient.phone}</span>}
+            {patient.phone2 && <span className="text-sm text-muted-foreground">{patient.phone2}</span>}
+            {patient.address && <span className="text-sm text-muted-foreground">{patient.address}</span>}
+          </div>
+        </div>
+
+        {/* Action buttons — Edit + New Visit */}
+        <div className="flex gap-2 shrink-0">
+          {/* 
+            EditPatientDialog is a Client Component (has useState, onClick).
+            We pass the patient data down as props from this Server Component.
+            The server fetches, the client handles interactivity. 
+          */}
+          <EditPatientDialog
+            patient={{
+              id: patient.id,
+              full_name: patient.full_name ?? '',
+              phone: patient.phone ?? '',
+              phone2: patient.phone2 ?? '',
+              address: patient.address ?? '',
+              date_of_birth: patient.date_of_birth ?? '',
+              sex: patient.sex ?? '',
+            }}
+          />
+          <Link href={`/dashboard/patients/${id}/visits/new`}>
+            <Button size="sm">+ New visit</Button>
+          </Link>
+        </div>
+      </div>
 
       <div className="mt-8 flex flex-col gap-6">
         {/* Visit history */}
@@ -92,14 +115,14 @@ export default async function PatientDetailPage({ params }: { params: Promise<{ 
                   <li key={v.id}>
                     <Link
                       href={`/dashboard/patients/${id}/visits/${v.id}`}
-                      className="flex items-center justify-between rounded-lg border border-border px-4 py-3 hover:bg-muted/50 transition-colors"
+                      className="group flex items-center justify-between rounded-lg border border-border px-4 py-3 hover:border-brand/30 hover:bg-brand/5 transition-all duration-150"
                     >
-                      <span className="text-sm font-medium text-blue-600">
+                      <span className="text-sm font-medium text-text-primary group-hover:text-brand transition-colors">
                         {new Date(v.visit_date).toLocaleDateString('en-GB', {
                           day: 'numeric', month: 'long', year: 'numeric'
                         })}
                       </span>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {v.reason_for_visit ?? v.diagnosis ?? 'Visit record'} · {v.staff_profiles?.full_name ?? 'Staff'}
                       </span>
                     </Link>

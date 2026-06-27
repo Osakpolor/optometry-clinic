@@ -22,17 +22,28 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
     .single()
 
   if (error || !visit) {
-    return <main className="mx-auto max-w-2xl p-10"><p className="text-red-600">Visit not found.</p></main>
+    return (
+      <main className="w-full py-2">
+        <p className="text-red-600">Visit not found.</p>
+      </main>
+    )
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-10">
-      <Link href={`/dashboard/patients/${id}/visits/${visitId}`} className="text-sm text-gray-400 hover:underline">
+    <main className="w-full py-2">
+      <Link
+        href={`/dashboard/patients/${id}/visits/${visitId}`}
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+      >
         ← Back to visit
       </Link>
-      <h1 className="mt-4 text-2xl font-semibold">Edit visit — {patient?.full_name}</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        {new Date(visit.visit_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+      <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+        Edit visit — {patient?.full_name}
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {new Date(visit.visit_date).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'long', year: 'numeric'
+        })}
       </p>
       <EditVisitForm patientId={id} visitId={visitId} visit={visit} />
     </main>

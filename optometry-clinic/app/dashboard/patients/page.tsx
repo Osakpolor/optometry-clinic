@@ -14,29 +14,43 @@ export default async function PatientsPage() {
     .order('legacy_id', { ascending: true, nullsFirst: false })
 
   return (
-    <main className="mx-auto max-w-5xl p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <main className="w-full py-2">
+
+      {/* Back navigation */}
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+      >
+        ← Dashboard
+      </Link>
+
+      {/* Page header */}
+      <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Patients</h1>
-          <p className="mt-1 text-muted-foreground">
-            Search for a returning patient or register a new one — {patients?.length ?? 0} records total.
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Patients</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {patients?.length ?? 0} records total — search or register a new patient.
           </p>
         </div>
         <Link href="/dashboard/patients/new">
-          <Button>+ Register patient</Button>
+          <Button size="sm">+ Register patient</Button>
         </Link>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium">All patients</CardTitle>
+      {/* Patients table card */}
+      <Card className="border border-border shadow-none">
+        <CardHeader className="px-5 pt-5 pb-3">
+          <CardTitle className="text-sm font-semibold text-gray-700">
+            All patients
+          </CardTitle>
         </CardHeader>
         <Separator />
-        <CardContent className="pt-4">
+        <CardContent className="px-5 pt-4 pb-5">
           {error && <p className="text-sm text-red-500">Error: {error.message}</p>}
           {!error && <PatientsTable patients={patients ?? []} />}
         </CardContent>
       </Card>
+
     </main>
   )
 }

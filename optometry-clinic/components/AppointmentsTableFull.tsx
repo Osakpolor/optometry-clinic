@@ -3,8 +3,6 @@
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
-import Link from 'next/link'
-
 
 const STATUSES = ['booked', 'confirmed', 'completed', 'no_show', 'cancelled']
 
@@ -16,64 +14,64 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-red-50 text-red-400 border-red-100',
 }
 
-export default function AppointmentsTable({ appointments }: { appointments: any[] }) {
+export default function AppointmentsTableFull({ appointments }: { appointments: any[] }) {
   const router = useRouter()
   const supabase = createClient()
 
   async function updateStatus(id: string, status: string) {
-    const { error } = await supabase.from('appointments').update({ status }).eq('id', id)
-    if (!error) router.refresh()
+    await supabase.from('appointments').update({ status }).eq('id', id)
+    router.refresh()
   }
 
   if (!appointments.length) {
-    return <p className="text-sm text-muted-foreground text-center py-6">No appointments.</p>
+    return (
+      <p className="text-sm text-muted-foreground text-center py-8">
+        No appointments in this date range.
+      </p>
+    )
   }
 
   return (
     <div>
-      {/* Mobile view */}
+      {/* Mobile */}
       <div className="flex flex-col divide-y sm:hidden">
         {appointments.map(appt => (
-         <div
-  key={appt.id}
-  className="py-3 flex flex-col gap-2 cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded transition-colors"
-  onClick={() => router.push(`/dashboard/patients/${appt.patient_id}`)}
->
-  <div className="flex items-start justify-between gap-2">
-    <div>
-      <p className="text-sm font-medium">{appt.patients?.full_name}</p>
-      <p className="text-xs text-muted-foreground">{appt.patients?.phone}</p>
-      <p className="text-xs text-muted-foreground">{appt.service_type}</p>
-      <p className="text-xs text-muted-foreground">
-        {new Date(appt.appointment_date).toLocaleDateString('en-GB', {
-          day: 'numeric', month: 'short', year: 'numeric'
-        })} at {new Date(appt.appointment_date).toLocaleTimeString('en-GB', {
-          hour: '2-digit', minute: '2-digit'
-        })}
-      </p>
-    </div>
-    <div onClick={e => e.stopPropagation()}>
-      <select
-        value={appt.status}
-        onChange={e => updateStatus(appt.id, e.target.value)}
-        className="text-xs border border-gray-200 rounded px-2 py-1 bg-white shrink-0"
-      >
-        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-    </div>
-  </div>
-</div>
+          <div
+            key={appt.id}
+            className="py-3 flex flex-col gap-2 cursor-pointer hover:bg-gray-50 -mx-2 px-2 rounded transition-colors"
+            onClick={() => router.push(`/dashboard/patients/${appt.patient_id}`)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium">{appt.patients?.full_name}</p>
+                <p className="text-xs text-muted-foreground">{appt.patients?.phone}</p>
+                <p className="text-xs text-muted-foreground">{appt.service_type}</p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(appt.appointment_date).toLocaleDateString('en-GB', {
+                    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+                  })} at {new Date(appt.appointment_date).toLocaleTimeString('en-GB', {
+                    hour: '2-digit', minute: '2-digit'
+                  })}
+                </p>
+              </div>
+              <div onClick={e => e.stopPropagation()}>
+                <Badge variant="outline" className={`text-xs ${STATUS_COLORS[appt.status]}`}>
+                  {appt.status}
+                </Badge>
+              </div>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Desktop table */}
+      {/* Desktop */}
       <table className="hidden sm:table w-full text-left text-sm">
         <thead>
           <tr className="border-b border-gray-200">
             <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Patient</th>
             <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Phone</th>
             <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Service</th>
-            <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Date</th>
+            <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Date & Time</th>
             <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">Status</th>
           </tr>
         </thead>
@@ -85,11 +83,14 @@ export default function AppointmentsTable({ appointments }: { appointments: any[
               onClick={() => router.push(`/dashboard/patients/${appt.patient_id}`)}
             >
               <td className="py-2.5 pr-4 font-medium">{appt.patients?.full_name}</td>
-              <td className="py-2.5 pr-4 text-muted-foreground">{appt.patients?.phone}</td>
+              <td className="py-2.5 pr-4 text-muted-foreground">{appt.patients?.phone ?? '—'}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">{appt.service_type}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">
-                {new Date(appt.appointment_date).toLocaleString('en-GB', {
-                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                {new Date(appt.appointment_date).toLocaleDateString('en-GB', {
+                  weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+                })}{' '}
+                {new Date(appt.appointment_date).toLocaleTimeString('en-GB', {
+                  hour: '2-digit', minute: '2-digit'
                 })}
               </td>
               <td className="py-2.5 pr-4" onClick={e => e.stopPropagation()}>

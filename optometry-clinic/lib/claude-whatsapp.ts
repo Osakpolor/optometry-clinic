@@ -1,4 +1,4 @@
-// Claude reads the patient's record and generates a personalised reply
+import { loadClinicPrompt } from './prompt-loader'
 
 type ReplyContext = {
   fromNumber: string
@@ -30,7 +30,7 @@ type ReplyContext = {
 export async function generateClaudeReply(ctx: ReplyContext): Promise<string> {
   const { messageText, patient, lead, recentVisit } = ctx
 
-  // Build context string for Claude
+  // ── Build patient context string ─────────────────────────
   let patientContext = ''
 
   if (patient) {
@@ -44,9 +44,13 @@ PATIENT RECORD:
       const meds = recentVisit.medications?.filter((m: any) => m.name) ?? []
       patientContext += `
 
-MOST RECENT VISIT (${new Date(recentVisit.visit_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}):
+MOST RECENT VISIT (${new Date(recentVisit.visit_date).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric'
+      })}):
 - Diagnosis: ${recentVisit.diagnosis ?? 'not recorded'}
-- Medications prescribed: ${meds.length > 0 ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ') : 'none'}
+- Medications prescribed: ${meds.length > 0
+        ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ')
+        : 'none'}
 - Follow-up due: ${recentVisit.follow_up_date ?? 'none scheduled'}`
     }
   } else if (lead) {
@@ -65,28 +69,17 @@ UNKNOWN CONTACT:
 - Treat as a new enquiry`
   }
 
-  const systemPrompt = `You are a friendly, professional assistant for Olu Eye Clinic, a specialist optometry practice in Benin City, Nigeria. You reply to WhatsApp messages from patients and leads on behalf of the clinic.
+  // ── Load system prompt from markdown file ────────────────
+  const systemPrompt = await loadClinicPrompt('olu-eye-clinic', {
+    clinic_name: 'Olu Eye Clinic',
+    clinic_address: '158 Airport Road, Ogogugbo, Benin City 300251, Edo State',
+    clinic_phone: '+234 903 225 4564',
+    clinic_services: 'Eye exams, glasses fitting, contact lens fitting, follow-up visits',
+    clinic_hours: 'Monday–Saturday, 8am–6pm',
+    patient_context: patientContext,
+  })
 
-CLINIC INFORMATION:
-- Name: _Olu Eye Clinic · 158 Airport Road, Ogogugbo, Benin City_
-- Location: 158 Airport Road, Ogogugbo, Benin City 300251, Edo State, Nigeria
-- Google Maps: https://maps.google.com/?q=158+Airport+Road+Ogogugbo+Benin+City+Edo+State
-- Services: Eye exams, glasses fitting, contact lens fitting, follow-up visits
-- Language: Respond in the same language the patient uses. Most patients write in English or Nigerian Pidgin.
-
-YOUR ROLE:
-- Answer questions about appointments, prescriptions, and clinic services
-- Remind patients of upcoming follow-ups if relevant
-- Help new enquiries understand how to book
-- Be warm, concise, and professional
-- Never diagnose or give specific medical advice — always say "please come in for an examination"
-- Keep replies SHORT — WhatsApp messages should be under 150 words
-- Use WhatsApp formatting: *bold* for important info, line breaks for readability
-
-${patientContext}
-
-IMPORTANT: You are replying on behalf of the clinic, not as a patient. Never reveal that you are an AI unless directly asked.`
-
+  // ── Call Claude API ──────────────────────────────────────
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -97,13 +90,13 @@ IMPORTANT: You are replying on behalf of the clinic, not as a patient. Never rev
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 300,
+      system: systemPrompt,
       messages: [
         {
           role: 'user',
           content: `Patient message: "${messageText}"\n\nPlease reply on behalf of Olu Eye Clinic.`
         }
       ],
-      system: systemPrompt,
     }),
   })
 
@@ -111,7 +104,6 @@ IMPORTANT: You are replying on behalf of the clinic, not as a patient. Never rev
 
   if (!response.ok) {
     console.error('Claude API error:', data)
-    // Fallback message if Claude fails
     return `Hello! Thank you for contacting Olu Eye Clinic. We'll get back to you shortly. For urgent matters, please call us directly.`
   }
 

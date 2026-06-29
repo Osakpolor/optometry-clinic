@@ -1,3 +1,6 @@
+import fs from 'fs'
+import path from 'path'
+
 type ClinicConfig = {
   clinic_name: string
   clinic_address: string
@@ -5,9 +8,9 @@ type ClinicConfig = {
   clinic_services: string
   clinic_hours: string
   patient_context: string
-  is_first_message: string    // ← new
-  time_of_day: string         // ← new
-  patient_name: string        // ← new
+  is_first_message: string
+  time_of_day: string
+  patient_name: string
 }
 
 export async function loadClinicPrompt(
@@ -15,7 +18,7 @@ export async function loadClinicPrompt(
   config: ClinicConfig
 ): Promise<string> {
   const promptPath = path.join(process.cwd(), 'prompts', `${clinicId}.md`)
-  
+
   let template: string
   try {
     template = fs.readFileSync(promptPath, 'utf-8')

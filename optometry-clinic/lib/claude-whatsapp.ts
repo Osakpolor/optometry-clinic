@@ -25,10 +25,15 @@ type ReplyContext = {
     follow_up_date?: string
     refraction?: any
   } | null
+  conversationHistory: {
+    role: string
+    message: string
+    created_at: string
+  }[]
 }
 
 export async function generateClaudeReply(ctx: ReplyContext): Promise<string> {
-  const { messageText, patient, lead, recentVisit } = ctx
+  const { messageText, patient, lead, recentVisit, conversationHistory } = ctx
 
   // ── Build patient context string ─────────────────────────
   let patientContext = ''
@@ -69,6 +74,16 @@ UNKNOWN CONTACT:
 - Treat as a new enquiry`
   }
 
+  // ── Determine session context ────────────────────────────
+  const isFirstMessage = conversationHistory.length === 0
+
+  // Nigeria time (WAT = UTC+1)
+  const now = new Date()
+  const hour = new Date(now.getTime() + 60 * 60 * 1000).getUTCHours()
+  const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
+
+  const patientName = patient?.full_name ?? lead?.full_name ?? ''
+
   // ── Load system prompt from markdown file ────────────────
   const systemPrompt = await loadClinicPrompt('olu-eye-clinic', {
     clinic_name: 'Olu Eye Clinic',
@@ -77,7 +92,24 @@ UNKNOWN CONTACT:
     clinic_services: 'Eye exams, glasses fitting, contact lens fitting, follow-up visits',
     clinic_hours: 'Monday–Saturday, 8am–6pm',
     patient_context: patientContext,
+    is_first_message: isFirstMessage ? 'true' : 'false',
+    time_of_day: timeOfDay,
+    patient_name: patientName,
   })
+
+  // ── Build conversation history for Claude ────────────────
+  // Pass previous messages so Claude remembers the full session
+  const messages: { role: 'user' | 'assistant'; content: string }[] = [
+    ...conversationHistory.map(h => ({
+      role: h.role as 'user' | 'assistant',
+      content: h.message,
+    })),
+    // Current incoming message
+    {
+      role: 'user' as const,
+      content: messageText,
+    }
+  ]
 
   // ── Call Claude API ──────────────────────────────────────
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -89,14 +121,9 @@ UNKNOWN CONTACT:
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 300,
+      max_tokens: 400,
       system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Patient message: "${messageText}"\n\nPlease reply on behalf of Olu Eye Clinic.`
-        }
-      ],
+      messages, // ← full conversation history now
     }),
   })
 
@@ -104,8 +131,8 @@ UNKNOWN CONTACT:
 
   if (!response.ok) {
     console.error('Claude API error:', data)
-    return `Hello! Thank you for contacting Olu Eye Clinic. We'll get back to you shortly. For urgent matters, please call us directly.`
+    return `Sorry, we're experiencing a brief issue. Please call us on +234 903 225 4564 or try again in a moment.`
   }
 
-  return data.content?.[0]?.text ?? `Thank you for your message. A member of our team will be in touch shortly.`
+  return data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`
 }

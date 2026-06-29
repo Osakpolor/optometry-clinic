@@ -150,6 +150,19 @@ export default function BookPage() {
       return
     }
 
+    // Send WhatsApp confirmation
+    await fetch('/api/whatsapp/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        fullName,
+        service,
+        date: dateStr,
+        time: selectedTime,
+      }),
+    })
+
     // Send confirmation email if they provided one
     if (email) {
       await fetch('/api/send-confirmation', {

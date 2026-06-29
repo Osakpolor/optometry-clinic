@@ -3,10 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
 
-// ── GET: Meta webhook verification ──────────────────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-
   const mode      = searchParams.get('hub.mode')
   const token     = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
@@ -14,11 +12,9 @@ export async function GET(req: NextRequest) {
   if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     return new NextResponse(challenge, { status: 200 })
   }
-
   return new NextResponse('Forbidden', { status: 403 })
 }
 
-// ── POST: Incoming WhatsApp messages ────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -44,8 +40,40 @@ export async function POST(req: NextRequest) {
     console.log(`📱 Message from ${fromNumber}: ${messageText}`)
 
     const supabase = await createClient()
+    const receivedAt = new Date().toISOString()
 
-    // ── Look up patient or lead ──────────────────────────────
+    // ── Record that a message arrived from this number ───────
+    await supabase
+      .from('whatsapp_pending_replies')
+      .upsert({
+        phone_number: fromNumber,
+        last_message_at: receivedAt,
+      }, { onConflict: 'phone_number' })
+
+    // ── Save incoming message immediately ────────────────────
+    await supabase.from('whatsapp_conversations').insert({
+      phone_number: fromNumber,
+      role: 'user',
+      message: messageText,
+    })
+
+    // ── Wait 4 seconds — buffer for rapid messages ───────────
+    await new Promise(resolve => setTimeout(resolve, 4000))
+
+    // ── Check if a newer message arrived during the wait ─────
+    const { data: pending } = await supabase
+      .from('whatsapp_pending_replies')
+      .select('last_message_at')
+      .eq('phone_number', fromNumber)
+      .single()
+
+    if (pending && pending.last_message_at > receivedAt) {
+      // A newer message came in — let that one handle the reply
+      console.log(`⏭️ Skipping reply to ${fromNumber} — newer message pending`)
+      return NextResponse.json({ status: 'ok' })
+    }
+
+    // ── No newer message — safe to reply now ─────────────────
     const { data: patient } = await supabase
       .from('patients')
       .select('id, full_name, phone, date_of_birth')
@@ -70,7 +98,7 @@ export async function POST(req: NextRequest) {
       recentVisit = visit
     }
 
-    // ── Load conversation history BEFORE calling Claude ──────
+    // ── Load conversation history ────────────────────────────
     const { data: history } = await supabase
       .from('whatsapp_conversations')
       .select('role, message, created_at')
@@ -79,14 +107,7 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20)
 
-    // ── Save incoming message ────────────────────────────────
-    await supabase.from('whatsapp_conversations').insert({
-      phone_number: fromNumber,
-      role: 'user',
-      message: messageText,
-    })
-
-    // ── Generate Claude reply with full context ──────────────
+    // ── Generate Claude reply ────────────────────────────────
     const reply = await generateClaudeReply({
       fromNumber,
       messageText,
@@ -103,10 +124,10 @@ export async function POST(req: NextRequest) {
       message: reply,
     })
 
-    // ── Send reply to WhatsApp ───────────────────────────────
+    // ── Send to WhatsApp ─────────────────────────────────────
     await sendWhatsAppMessage(fromNumber, reply)
 
-    // ── Save booking request to leads if detected ────────────
+    // ── Save booking to leads if detected ───────────────────
     const isBookingMessage =
       messageText.toLowerCase().includes('name:') ||
       messageText.toLowerCase().includes('type visit:') ||

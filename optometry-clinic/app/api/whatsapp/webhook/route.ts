@@ -80,16 +80,55 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate AI reply using Claude
-    const reply = await generateClaudeReply({
-      fromNumber,
-      messageText,
-      patient: patient ?? null,
-      lead: lead ?? null,
-      recentVisit,
-    })
+const reply = await generateClaudeReply({
+  fromNumber,
+  messageText,
+  patient: patient ?? null,
+  lead: lead ?? null,
+  recentVisit,
+})
 
-    // Send the reply back via WhatsApp
-    await sendWhatsAppMessage(fromNumber, reply)
+// Send the reply back via WhatsApp
+await sendWhatsAppMessage(fromNumber, reply)
+
+// ── Save to Supabase if this looks like a booking request ──
+// Check if message contains booking info (name, date, visit type)
+const isBookingMessage = 
+  messageText.toLowerCase().includes('name:') ||
+  messageText.toLowerCase().includes('type visit:') ||
+  messageText.toLowerCase().includes('preferred date')
+
+if (isBookingMessage && !patient) {
+  // Extract details from message using simple parsing
+  const nameMatch = messageText.match(/name:\s*([^\n]+)/i)
+  const phoneMatch = messageText.match(/phone:\s*([^\n]+)/i)
+  const visitMatch = messageText.match(/type visit:\s*([^\n]+)/i)
+  const dateMatch = messageText.match(/preferred date[^:]*:\s*([^\n]+)/i)
+
+  const extractedName = nameMatch?.[1]?.trim()
+  const extractedPhone = phoneMatch?.[1]?.trim()
+  const extractedVisit = visitMatch?.[1]?.trim()
+  const extractedDate = dateMatch?.[1]?.trim()
+
+  if (extractedName) {
+    // Check if lead already exists for this number
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('phone', fromNumber)
+      .single()
+
+    if (!existingLead) {
+      await supabase.from('leads').insert({
+        full_name: extractedName,
+        phone: extractedPhone ?? fromNumber,
+        service_interest: extractedVisit ?? 'Eye exam',
+        status: 'new',
+        notes: `WhatsApp booking request. Preferred: ${extractedDate ?? 'not specified'}`,
+      })
+    }
+  }
+}
 
     return NextResponse.json({ status: 'ok' })
 

@@ -57,8 +57,28 @@ export async function POST(req: NextRequest) {
       message: messageText,
     })
 
-    // ── Wait 4 seconds — buffer for rapid messages ───────────
-    await new Promise(resolve => setTimeout(resolve, 4000))
+    // ── Wait 6 seconds — buffer for rapid messages ───────────
+    await new Promise(resolve => setTimeout(resolve, 6000))
+
+      // ── Acquire reply lock ───────────────────────────────────
+      // Prevents duplicate replies from concurrent webhook calls
+      const lockKey = `lock_${fromNumber}`
+      const { data: existingLock } = await supabase
+          .from('whatsapp_pending_replies')
+          .select('last_message_at')
+          .eq('phone_number', fromNumber)
+          .single()
+
+      if (existingLock && existingLock.last_message_at > receivedAt) {
+          console.log(`⏭️ Skipping — newer message exists`)
+          return NextResponse.json({ status: 'ok' })
+      }
+
+      // Mark as being processed
+      await supabase
+          .from('whatsapp_pending_replies')
+          .update({ last_message_at: new Date(Date.now() + 60000).toISOString() })
+          .eq('phone_number', fromNumber)
 
     // ── Check if a newer message arrived during the wait ─────
     const { data: pending } = await supabase

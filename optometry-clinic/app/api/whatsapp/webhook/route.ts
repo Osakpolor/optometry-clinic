@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       .from('whatsapp_conversations')
       .select('role, message, created_at')
       .eq('phone_number', fromNumber)
-      .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .gte('created_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
       .order('created_at', { ascending: true })
       .limit(20)
 

@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient()
     const receivedAt = new Date().toISOString()
 
-    // ── Record that a message arrived from this number ───────
+    // ── Record message arrival time ──────────────────────────
     await supabase
       .from('whatsapp_pending_replies')
       .upsert({
@@ -50,37 +50,17 @@ export async function POST(req: NextRequest) {
         last_message_at: receivedAt,
       }, { onConflict: 'phone_number' })
 
-    // ── Save incoming message immediately ────────────────────
+    // ── Save incoming message ────────────────────────────────
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'user',
       message: messageText,
     })
 
-    // ── Wait 6 seconds — buffer for rapid messages ───────────
+    // ── Wait 6 seconds for more messages ────────────────────
     await new Promise(resolve => setTimeout(resolve, 6000))
 
-      // ── Acquire reply lock ───────────────────────────────────
-      // Prevents duplicate replies from concurrent webhook calls
-      const lockKey = `lock_${fromNumber}`
-      const { data: existingLock } = await supabase
-          .from('whatsapp_pending_replies')
-          .select('last_message_at')
-          .eq('phone_number', fromNumber)
-          .single()
-
-      if (existingLock && existingLock.last_message_at > receivedAt) {
-          console.log(`⏭️ Skipping — newer message exists`)
-          return NextResponse.json({ status: 'ok' })
-      }
-
-      // Mark as being processed
-      await supabase
-          .from('whatsapp_pending_replies')
-          .update({ last_message_at: new Date(Date.now() + 60000).toISOString() })
-          .eq('phone_number', fromNumber)
-
-    // ── Check if a newer message arrived during the wait ─────
+    // ── Check if newer message arrived during wait ───────────
     const { data: pending } = await supabase
       .from('whatsapp_pending_replies')
       .select('last_message_at')
@@ -88,12 +68,11 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (pending && pending.last_message_at > receivedAt) {
-      // A newer message came in — let that one handle the reply
-      console.log(`⏭️ Skipping reply to ${fromNumber} — newer message pending`)
+      console.log(`⏭️ Skipping — newer message exists for ${fromNumber}`)
       return NextResponse.json({ status: 'ok' })
     }
 
-    // ── No newer message — safe to reply now ─────────────────
+    // ── Load patient or lead ─────────────────────────────────
     const { data: patient } = await supabase
       .from('patients')
       .select('id, full_name, phone, date_of_birth')

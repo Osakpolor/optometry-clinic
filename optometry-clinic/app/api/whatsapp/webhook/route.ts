@@ -74,11 +74,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Load patient or lead ─────────────────────────────────
-    // Build a query that matches ANY common phone format variant
     const phoneVariants = getPhoneVariants(fromNumber)
     const phoneOrClause = phoneVariants.map(p => `phone.eq.${p}`).join(',')
 
-    // Use maybeSingle() instead of single() — won't throw if 0 or multiple matches
     const { data: patientMatches } = await supabase
       .from('patients')
       .select('id, full_name, phone, date_of_birth')
@@ -107,7 +105,7 @@ export async function POST(req: NextRequest) {
         .select('visit_date, diagnosis, medications, follow_up_date, refraction, notes')
         .eq('patient_id', patient.id)
         .order('visit_date', { ascending: false })
-        .limit(3) // last 3 visits for fuller context
+        .limit(3)
 
       allVisits = visits ?? []
       recentVisit = allVisits[0] ?? null
@@ -122,14 +120,14 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20)
 
-// ── Generate Claude reply ────────────────────────────────
+    // ── Generate Claude reply ────────────────────────────────
     const { reply, booking } = await generateClaudeReply({
       fromNumber,
       messageText,
       patient: patient ?? null,
       lead: lead ?? null,
       recentVisit,
-      allVisits, 
+      allVisits,
       conversationHistory: history ?? [],
     })
 
@@ -145,14 +143,28 @@ export async function POST(req: NextRequest) {
 
     // ── Save confirmed booking to leads ───────────────────────
     if (booking && booking.name && booking.date) {
-      const { data: existingLead } = await supabase
+      // Validate Claude's extracted phone is actually numeric digits,
+      // not a placeholder string like "whatsapp_number" or "this number".
+      // If invalid, fall back to the verified WhatsApp sender number —
+      // which is always the ground truth for who is messaging.
+      const rawPhone = booking.phone?.toString().trim() ?? ''
+      const digitsOnly = rawPhone.replace(/[^\d+]/g, '')
+      const isValidPhone = /^\+?\d{10,15}$/.test(digitsOnly)
+      const finalPhone = isValidPhone ? digitsOnly : fromNumber
+
+      const phoneVariantsForLead = getPhoneVariants(finalPhone)
+      const leadPhoneOrClause = phoneVariantsForLead.map(p => `phone.eq.${p}`).join(',')
+
+      const { data: existingLeadMatches } = await supabase
         .from('leads')
         .select('id')
-        .eq('phone', fromNumber)
-        .single()
+        .or(leadPhoneOrClause)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      const existingLead = existingLeadMatches?.[0] ?? null
 
       if (existingLead) {
-        // Update existing lead with new booking info
         await supabase
           .from('leads')
           .update({
@@ -164,10 +176,9 @@ export async function POST(req: NextRequest) {
           })
           .eq('id', existingLead.id)
       } else {
-        // Create new lead
         await supabase.from('leads').insert({
           full_name: booking.name,
-          phone: booking.phone ?? fromNumber,
+          phone: finalPhone,
           service_interest: booking.service ?? 'Eye exam',
           preferred_date: booking.date,
           preferred_time: booking.time,

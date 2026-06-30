@@ -152,6 +152,17 @@ Only include this block when booking is fully confirmed with all
 four pieces of information. Never include it while still collecting 
 information.
 
+IMPORTANT — Phone field rules:
+- If the patient explicitly gives you a phone number (digits), use those exact digits in the "phone" field.
+- If the patient says "this number", "this WhatsApp number", "same number", 
+  or anything implying their current WhatsApp — DO NOT write "whatsapp_number" 
+  or any placeholder text. Instead, leave the "phone" field as an empty 
+  string "". The system already knows their real WhatsApp number and 
+  will use it automatically.
+- NEVER write descriptive text like "whatsapp_number", "this number", 
+  "same as before", or "N/A" as the phone value — only real digits or 
+  an empty string "".
+
 ---
 
 

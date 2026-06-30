@@ -24,7 +24,16 @@ type ReplyContext = {
     medications?: any[]
     follow_up_date?: string
     refraction?: any
+    notes?: string
   } | null
+  allVisits: {
+    visit_date: string
+    diagnosis?: string
+    medications?: any[]
+    follow_up_date?: string
+    refraction?: any
+    notes?: string
+  }[]
   conversationHistory: {
     role: string
     message: string
@@ -32,8 +41,11 @@ type ReplyContext = {
   }[]
 }
 
-export async function generateClaudeReply(ctx: ReplyContext): Promise<string> {
-  const { messageText, patient, lead, recentVisit, conversationHistory } = ctx
+export async function generateClaudeReply(ctx: ReplyContext): Promise<{
+  reply: string
+  booking: { name: string; phone: string; date: string; time: string; service: string } | null
+}> {
+  const { messageText, patient, lead, recentVisit, allVisits, conversationHistory } = ctx
 
   // ── Build patient context string ─────────────────────────
   let patientContext = ''
@@ -45,18 +57,25 @@ PATIENT RECORD:
 - Date of birth: ${patient.date_of_birth ?? 'not on file'}
 - Known patient: Yes`
 
-    if (recentVisit) {
-      const meds = recentVisit.medications?.filter((m: any) => m.name) ?? []
-      patientContext += `
+    if (allVisits && allVisits.length > 0) {
+      patientContext += `\n\nVISIT HISTORY (most recent first):`
 
-MOST RECENT VISIT (${new Date(recentVisit.visit_date).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'long', year: 'numeric'
-      })}):
-- Diagnosis: ${recentVisit.diagnosis ?? 'not recorded'}
-- Medications prescribed: ${meds.length > 0
-        ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ')
-        : 'none'}
-- Follow-up due: ${recentVisit.follow_up_date ?? 'none scheduled'}`
+      allVisits.forEach((visit, i) => {
+        const meds = visit.medications?.filter((m: any) => m.name) ?? []
+        const visitDate = new Date(visit.visit_date).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'long', year: 'numeric'
+        })
+
+        patientContext += `
+
+Visit ${i + 1} (${visitDate}):
+- Diagnosis: ${visit.diagnosis ?? 'not recorded'}
+- Prescribed medications: ${meds.length > 0
+            ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ')
+            : 'none'}
+- Doctor's notes: ${visit.notes ?? 'none'}
+- Follow-up scheduled: ${visit.follow_up_date ?? 'none'}`
+      })
     }
   } else if (lead) {
     patientContext = `
@@ -131,8 +150,30 @@ UNKNOWN CONTACT:
 
   if (!response.ok) {
     console.error('Claude API error:', data)
-    return `Sorry, we're experiencing a brief issue. Please call us on +234 9166015438 or try again in a moment.`
+    return {
+      reply: `Sorry, we're experiencing a brief issue. Please call us on 09166015438 or try again in a moment.`,
+      booking: null,
+    }
   }
 
-  return data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`
+  const fullReply = data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`
+
+  const booking = extractBookingFromReply(fullReply)
+  const cleanReply = fullReply.replace(/\[BOOKING_CONFIRMED\][\s\S]*?\[\/BOOKING_CONFIRMED\]/, '').trim()
+
+  return {
+    reply: cleanReply,
+    booking,
+  }
+}
+
+export function extractBookingFromReply(fullReply: string) {
+  const match = fullReply.match(/\[BOOKING_CONFIRMED\]([\s\S]*?)\[\/BOOKING_CONFIRMED\]/)
+  if (!match) return null
+
+  try {
+    return JSON.parse(match[1].trim())
+  } catch {
+    return null
+  }
 }

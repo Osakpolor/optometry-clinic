@@ -86,15 +86,17 @@ export async function POST(req: NextRequest) {
       .single() : { data: null }
 
     let recentVisit = null
+    let allVisits: any[] = []
     if (patient) {
-      const { data: visit } = await supabase
+      const { data: visits } = await supabase
         .from('visit_records')
-        .select('visit_date, diagnosis, medications, follow_up_date, refraction')
+        .select('visit_date, diagnosis, medications, follow_up_date, refraction, notes')
         .eq('patient_id', patient.id)
         .order('visit_date', { ascending: false })
-        .limit(1)
-        .single()
-      recentVisit = visit
+        .limit(3) // last 3 visits for fuller context
+
+      allVisits = visits ?? []
+      recentVisit = allVisits[0] ?? null
     }
 
     // ── Load conversation history ────────────────────────────
@@ -106,17 +108,18 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20)
 
-    // ── Generate Claude reply ────────────────────────────────
-    const reply = await generateClaudeReply({
+// ── Generate Claude reply ────────────────────────────────
+    const { reply, booking } = await generateClaudeReply({
       fromNumber,
       messageText,
       patient: patient ?? null,
       lead: lead ?? null,
       recentVisit,
+      allVisits, 
       conversationHistory: history ?? [],
     })
 
-    // ── Save Claude's reply ──────────────────────────────────
+    // ── Save Claude's reply (clean version, no hidden block) ──
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'assistant',
@@ -126,40 +129,39 @@ export async function POST(req: NextRequest) {
     // ── Send to WhatsApp ─────────────────────────────────────
     await sendWhatsAppMessage(fromNumber, reply)
 
-    // ── Save booking to leads if detected ───────────────────
-    const isBookingMessage =
-      messageText.toLowerCase().includes('name:') ||
-      messageText.toLowerCase().includes('type visit:') ||
-      messageText.toLowerCase().includes('preferred date')
+    // ── Save confirmed booking to leads ───────────────────────
+    if (booking && booking.name && booking.date) {
+      const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', fromNumber)
+        .single()
 
-    if (isBookingMessage && !patient) {
-      const nameMatch  = messageText.match(/name:\s*([^\n]+)/i)
-      const phoneMatch = messageText.match(/phone:\s*([^\n]+)/i)
-      const visitMatch = messageText.match(/type visit:\s*([^\n]+)/i)
-      const dateMatch  = messageText.match(/preferred date[^:]*:\s*([^\n]+)/i)
-
-      const extractedName  = nameMatch?.[1]?.trim()
-      const extractedPhone = phoneMatch?.[1]?.trim()
-      const extractedVisit = visitMatch?.[1]?.trim()
-      const extractedDate  = dateMatch?.[1]?.trim()
-
-      if (extractedName) {
-        const { data: existingLead } = await supabase
+      if (existingLead) {
+        // Update existing lead with new booking info
+        await supabase
           .from('leads')
-          .select('id')
-          .eq('phone', fromNumber)
-          .single()
-
-        if (!existingLead) {
-          await supabase.from('leads').insert({
-            full_name: extractedName,
-            phone: extractedPhone ?? fromNumber,
-            service_interest: extractedVisit ?? 'Eye exam',
+          .update({
+            full_name: booking.name,
+            service_interest: booking.service ?? 'Eye exam',
+            preferred_date: booking.date,
+            preferred_time: booking.time,
             status: 'new',
-            notes: `WhatsApp booking request. Preferred: ${extractedDate ?? 'not specified'}`,
           })
-        }
+          .eq('id', existingLead.id)
+      } else {
+        // Create new lead
+        await supabase.from('leads').insert({
+          full_name: booking.name,
+          phone: booking.phone ?? fromNumber,
+          service_interest: booking.service ?? 'Eye exam',
+          preferred_date: booking.date,
+          preferred_time: booking.time,
+          status: 'new',
+        })
       }
+
+      console.log(`✅ Booking saved for ${booking.name} on ${booking.date} at ${booking.time}`)
     }
 
     return NextResponse.json({ status: 'ok' })

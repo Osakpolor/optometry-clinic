@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
+import { getPhoneVariants } from '@/lib/phone-utils'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -73,17 +74,30 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Load patient or lead ─────────────────────────────────
-    const { data: patient } = await supabase
+    // Build a query that matches ANY common phone format variant
+    const phoneVariants = getPhoneVariants(fromNumber)
+    const phoneOrClause = phoneVariants.map(p => `phone.eq.${p}`).join(',')
+
+    // Use maybeSingle() instead of single() — won't throw if 0 or multiple matches
+    const { data: patientMatches } = await supabase
       .from('patients')
       .select('id, full_name, phone, date_of_birth')
-      .or(`phone.eq.${fromNumber},phone.eq.0${fromNumber.slice(3)}`)
-      .single()
+      .or(phoneOrClause)
+      .limit(1)
 
-    const { data: lead } = !patient ? await supabase
-      .from('leads')
-      .select('id, full_name, phone, service_interest, status, preferred_date, preferred_time')
-      .or(`phone.eq.${fromNumber},phone.eq.0${fromNumber.slice(3)}`)
-      .single() : { data: null }
+    const patient = patientMatches?.[0] ?? null
+
+    let lead = null
+    if (!patient) {
+      const { data: leadMatches } = await supabase
+        .from('leads')
+        .select('id, full_name, phone, service_interest, status, preferred_date, preferred_time')
+        .or(phoneOrClause)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      lead = leadMatches?.[0] ?? null
+    }
 
     let recentVisit = null
     let allVisits: any[] = []

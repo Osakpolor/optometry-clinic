@@ -88,9 +88,9 @@ UNKNOWN CONTACT:
   const systemPrompt = await loadClinicPrompt('olu-eye-clinic', {
     clinic_name: 'Olu Eye Clinic',
     clinic_address: '158 Airport Road, Ogogugbo, Benin City 300251, Edo State',
-    clinic_phone: '+234 903 225 4564',
+    clinic_phone: '+234 9166015438',
     clinic_services: 'Eye exams, glasses fitting, contact lens fitting, follow-up visits',
-    clinic_hours: 'Monday–Saturday, 8am–6pm',
+    clinic_hours: 'Monday–Saturday, 8am–4pm',
     patient_context: patientContext,
     is_first_message: isFirstMessage ? 'true' : 'false',
     time_of_day: timeOfDay,
@@ -131,7 +131,7 @@ UNKNOWN CONTACT:
 
   if (!response.ok) {
     console.error('Claude API error:', data)
-    return `Sorry, we're experiencing a brief issue. Please call us on +234 903 225 4564 or try again in a moment.`
+    return `Sorry, we're experiencing a brief issue. Please call us on +234 9166015438 or try again in a moment.`
   }
 
   return data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`

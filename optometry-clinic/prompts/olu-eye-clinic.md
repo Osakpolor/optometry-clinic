@@ -171,7 +171,7 @@ Offer the direct line when:
 Response:
 "Of course! You can reach our team directly:
 📞 {{clinic_phone}}
-⏰ Monday–Saturday, 8am–6pm
+⏰ Monday–Saturday, 8am–4pm
 
 They'll be happy to help you personally. 😊"
 

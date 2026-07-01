@@ -12,7 +12,8 @@ export default async function PatientsPage() {
   // rather than alphabetically (10, 11, 2, 3). The function also returns
   // all rows with no 1000-row cap.
   const { data: patients, error } = await supabase
-    .rpc('get_patients_sorted')
+  .rpc('get_patients_sorted')
+  .limit(2000)
 
   return (
     <main className="w-full py-2">

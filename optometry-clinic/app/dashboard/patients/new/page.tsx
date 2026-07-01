@@ -8,19 +8,26 @@ export default async function NewPatientPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data } = await supabase.rpc('next_patient_id')
-  const nextId = data ?? 197
+  // Get the next suggested file number based on the highest
+  // existing file_number in the patients table.
+  const { data: nextFileNumber } = await supabase.rpc('next_file_number')
 
   return (
     <main className="max-w-3xl mx-auto">
-      <Link href="/dashboard/patients" className="text-muted-foreground hover:underline text-sm">
+      <Link
+        href="/dashboard/patients"
+        className="text-muted-foreground hover:underline text-sm"
+      >
         ← All patients
       </Link>
       <div className="mt-4 mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Register new patient</h1>
-        <p className="mt-1 text-muted-foreground">Patient will be assigned ID <span className="font-semibold text-foreground">#{nextId}</span></p>
+        <p className="mt-1 text-muted-foreground">
+          Fill in the patient details below. File number is pre-filled with the
+          next available number but can be changed.
+        </p>
       </div>
-      <RegisterPatientForm nextId={nextId} />
+      <RegisterPatientForm nextFileNumber={nextFileNumber ?? 1} />
     </main>
   )
 }

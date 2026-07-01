@@ -6,25 +6,44 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({
+  label, required, hint, children,
+}: {
+  label: string
+  required?: boolean
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <div className="flex flex-col gap-2">
       <label className="text-base font-medium text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
       {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
 
-const inputClass = "w-full px-4 py-3 text-base rounded-lg border border-gray-200 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all bg-white placeholder:text-gray-400"
+const inputClass =
+  'w-full px-4 py-3 text-base rounded-lg border border-gray-200 ' +
+  'focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 ' +
+  'transition-all bg-white placeholder:text-gray-400'
 
-export default function RegisterPatientForm({ nextId }: { nextId: number }) {
+export default function RegisterPatientForm({
+  nextFileNumber,
+}: {
+  nextFileNumber: number
+}) {
   const router = useRouter()
   const supabase = createClient()
 
+  const [fileNumber, setFileNumber] = useState(String(nextFileNumber))
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [otherNames, setOtherNames] = useState('')
@@ -42,7 +61,12 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
     setErrorMsg('')
 
     const patientId = crypto.randomUUID()
-    const fullName = [firstName, lastName, otherNames].filter(Boolean).join(' ')
+    const fullName = [firstName, lastName, otherNames]
+      .filter(Boolean)
+      .join(' ')
+
+    // Normalise file number — strip whitespace, store as null if empty
+    const fn = fileNumber.trim() || null
 
     const { error } = await supabase.from('patients').insert({
       id: patientId,
@@ -52,11 +76,23 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
       sex: sex || null,
       address: address || null,
       notes: notes || null,
-      legacy_id: nextId,
+      file_number: fn,
     })
 
     setSaving(false)
-    if (error) { setErrorMsg(error.message); return }
+
+    if (error) {
+      // Unique constraint violation — file number already taken
+      if (error.code === '23505') {
+        setErrorMsg(
+          `File number "${fn}" is already assigned to another patient. ` +
+          `Please use a different number.`
+        )
+      } else {
+        setErrorMsg(error.message)
+      }
+      return
+    }
 
     await new Promise(resolve => setTimeout(resolve, 500))
     router.push(`/dashboard/patients/${patientId}`)
@@ -65,6 +101,36 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+
+      {/* File number — top of form, most important reference */}
+      <Card className="border-brand/30 bg-brand/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold uppercase tracking-wide text-muted-foreground">
+            File number
+          </CardTitle>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-6">
+          <Field
+            label="File number"
+            required
+            hint="Pre-filled with the next available number. Change it if you need to use a specific number (e.g. filling a gap)."
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-bold text-muted-foreground">#</span>
+              <input
+                required
+                value={fileNumber}
+                onChange={e => setFileNumber(e.target.value)}
+                placeholder={String(nextFileNumber)}
+                className={`${inputClass} text-2xl font-bold tracking-tight max-w-[200px]`}
+              />
+            </div>
+          </Field>
+        </CardContent>
+      </Card>
+
+      {/* Personal details */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold uppercase tracking-wide text-muted-foreground">
@@ -118,6 +184,7 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
         </CardContent>
       </Card>
 
+      {/* Contact details */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold uppercase tracking-wide text-muted-foreground">
@@ -157,6 +224,7 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
         </CardContent>
       </Card>
 
+      {/* Notes */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold uppercase tracking-wide text-muted-foreground">
@@ -175,11 +243,18 @@ export default function RegisterPatientForm({ nextId }: { nextId: number }) {
         </CardContent>
       </Card>
 
-      {errorMsg && <p className="text-red-500 text-sm">{errorMsg}</p>}
+      {errorMsg && (
+        <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          {errorMsg}
+        </p>
+      )}
 
       <div className="flex items-center justify-between pb-8">
-        <p className="text-muted-foreground">
-          Will be assigned <span className="font-semibold text-foreground">Patient #{nextId}</span>
+        <p className="text-muted-foreground text-sm">
+          Registering as{' '}
+          <span className="font-semibold text-foreground">
+            File #{fileNumber || '—'}
+          </span>
         </p>
         <div className="flex gap-3">
           <Button

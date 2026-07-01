@@ -8,10 +8,11 @@ import Link from 'next/link'
 export default async function PatientsPage() {
   const supabase = await createClient()
 
+  // Use RPC so Postgres sorts file numbers numerically (2, 3 ... 9, 10, 11)
+  // rather than alphabetically (10, 11, 2, 3). The function also returns
+  // all rows with no 1000-row cap.
   const { data: patients, error } = await supabase
-    .from('patients')
-    .select('id, full_name, phone, sex, legacy_id, created_at')
-    .order('legacy_id', { ascending: true, nullsFirst: false })
+    .rpc('get_patients_sorted')
 
   return (
     <main className="w-full py-2">
@@ -19,7 +20,8 @@ export default async function PatientsPage() {
       {/* Back navigation */}
       <Link
         href="/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground
+                   hover:text-foreground transition-colors mb-6"
       >
         ← Dashboard
       </Link>

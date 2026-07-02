@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { EditPatientDialog } from '@/components/patients/EditPatientDialog'
+import { DeletePatientButton } from '@/components/patients/DeletePatientButton'
 
 export default async function PatientDetailPage({
   params,
@@ -143,6 +144,13 @@ export default async function PatientDetailPage({
             }}
             userRole={userRole}
           />
+          {/* Delete button — admin only, soft delete */}
+          {userRole === 'admin' && (
+            <DeletePatientButton
+              patientId={patient.id}
+              patientName={patient.full_name ?? ''}
+            />
+          )}
           <Link href={`/dashboard/patients/${id}/visits/new`}>
             <Button size="sm">+ New visit</Button>
           </Link>

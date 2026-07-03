@@ -172,17 +172,19 @@ export default async function PatientDetailPage({
                   <li key={v.id}>
                     <Link
                       href={`/dashboard/patients/${id}/visits/${v.id}`}
-                      className="group flex items-center justify-between rounded-lg border
-                                 border-border px-4 py-3 hover:border-brand/30 hover:bg-brand/5
-                                 transition-all duration-150"
+                      className="group flex flex-col sm:flex-row sm:items-center
+                                 sm:justify-between rounded-lg border border-border
+                                 px-4 py-3 hover:border-brand/30 hover:bg-brand/5
+                                 transition-all duration-150 gap-1"
                     >
                       <span className="text-sm font-medium text-text-primary
-                                       group-hover:text-brand transition-colors">
+                                       group-hover:text-brand transition-colors shrink-0">
                         {new Date(v.visit_date).toLocaleDateString('en-GB', {
                           day: 'numeric', month: 'long', year: 'numeric',
                         })}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground sm:text-right
+                                       line-clamp-2">
                         {v.reason_for_visit ?? v.diagnosis ?? 'Visit record'}
                         {' · '}
                         {v.staff_profiles?.full_name ?? 'Staff'}

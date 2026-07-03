@@ -14,9 +14,13 @@ import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
   return (
-    <div className="flex gap-4 py-2 text-sm border-b border-gray-50 last:border-0">
-      <span className="w-44 shrink-0 text-muted-foreground">{label}</span>
-      <span className="font-medium">{value}</span>
+    <div className="flex flex-col sm:flex-row sm:gap-4 py-2 text-sm
+                    border-b border-gray-50 last:border-0">
+      <span className="w-full sm:w-44 shrink-0 text-muted-foreground text-xs
+                       sm:text-sm mb-0.5 sm:mb-0">
+        {label}
+      </span>
+      <span className="font-medium break-words">{value}</span>
     </div>
   )
 }
@@ -62,9 +66,12 @@ function EyeGridHeader({ left = 'OD (Right)', right = 'OS (Left)' }: { left?: st
 // monospace font makes optical data (SPH/CYL/AXIS) easier to scan
 function RawBlock({ text }: { text: string }) {
   return (
-    <pre className="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed bg-gray-50 rounded p-3">
-      {text}
-    </pre>
+    <div className="overflow-x-auto -mx-1">
+      <pre className="text-xs sm:text-sm text-gray-700 whitespace-pre font-mono
+                      leading-relaxed bg-gray-50 rounded p-3 min-w-max">
+        {text}
+      </pre>
+    </div>
   )
 }
 

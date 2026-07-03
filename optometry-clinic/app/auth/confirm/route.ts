@@ -5,7 +5,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type')
-  const next = searchParams.get('next') ?? '/auth/set-password'
 
   if (token_hash && type) {
     const supabase = await createClient()
@@ -16,13 +15,11 @@ export async function GET(request: NextRequest) {
     })
 
     if (!error) {
-      // Token verified — redirect to set password page
       return NextResponse.redirect(new URL('/auth/set-password', request.url))
     }
   }
 
-  // Something went wrong — redirect to error page
-  return NextResponse.redirect(
-    new URL('/auth/error?message=Invalid+or+expired+invite+link', request.url)
-  )
+  // If no token_hash, maybe Supabase already established a session via hash fragment
+  // Redirect to a client-side page that can detect the session and redirect
+  return NextResponse.redirect(new URL('/auth/set-password', request.url))
 }

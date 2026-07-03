@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -11,7 +11,24 @@ export default function SetPasswordPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        // No session at all — send to login
+        router.push('/login')
+        return
+      }
+
+      setChecking(false)
+    }
+
+    checkSession()
+  }, [router, supabase])
 
   async function handleSetPassword() {
     setError(null)
@@ -36,15 +53,21 @@ export default function SetPasswordPage() {
       return
     }
 
-    // Password set — send them to the dashboard
     router.push('/dashboard')
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-[#f9fafb] flex items-center justify-center">
+        <p className="text-[14px] text-[#6b7280]">Loading...</p>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-[#f9fafb] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
 
-        {/* Logo / Title */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-semibold text-[#171717] tracking-tight">
             Olu Eye Clinic
@@ -54,7 +77,6 @@ export default function SetPasswordPage() {
           </p>
         </div>
 
-        {/* Card */}
         <div className="bg-white border border-[#e5e7eb] rounded-[6px] p-6 shadow-sm space-y-4">
 
           <div className="space-y-1">

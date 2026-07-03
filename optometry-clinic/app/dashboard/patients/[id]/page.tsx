@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { EditPatientDialog } from '@/components/patients/EditPatientDialog'
 import { DeletePatientButton } from '@/components/patients/DeletePatientButton'
+import PatientDocuments from '@/components/PatientDocuments'
 
 export default async function PatientDetailPage({
   params,
@@ -244,6 +245,21 @@ export default async function PatientDetailPage({
           <Separator />
           <CardContent className="pt-4">
             <PatientNotes patientId={patient.id} initialNotes={patient.notes} />
+          </CardContent>
+        </Card>
+
+        {/* Legacy documents from patient-documents storage bucket */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-medium">Legacy records</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Original Word docs and PDFs from the clinic's physical file.
+              Click Open to view or download.
+            </p>
+          </CardHeader>
+          <Separator />
+          <CardContent className="pt-4">
+            <PatientDocuments patientId={patient.id} />
           </CardContent>
         </Card>
       </div>

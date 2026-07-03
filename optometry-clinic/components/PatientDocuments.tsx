@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { FileText, File, Download, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
+
 type StorageFile = {
   name: string
-  id: string
+  id: string | null
   updated_at: string
   created_at: string
   metadata: {
@@ -64,7 +65,7 @@ export default function PatientDocuments({ patientId }: Props) {
         return
       }
       // Filter out placeholder/folder entries
-      setFiles((data ?? []).filter(f => f.name !== '.emptyFolderPlaceholder'))
+      setFiles((data ?? []).filter(f => f.name !== '.emptyFolderPlaceholder') as StorageFile[])
     }
 
     loadFiles()

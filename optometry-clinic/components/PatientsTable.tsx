@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Patient = {
@@ -16,16 +16,12 @@ type Patient = {
 type SortKey = 'file_number' | 'full_name' | 'sex'
 type SortDir = 'asc' | 'desc'
 
-// Returns the best available patient reference number for display.
-// Prefers file_number, falls back to legacy_id, then shows '—'.
 function patientRef(p: Patient): string {
   if (p.file_number) return p.file_number
   if (p.legacy_id != null) return String(p.legacy_id)
   return '—'
 }
 
-// Numeric-aware sort so "9" comes before "10" instead of after "19".
-// Falls back to string comparison for non-numeric values.
 function compareRefs(a: string, b: string): number {
   const na = Number(a)
   const nb = Number(b)
@@ -33,11 +29,26 @@ function compareRefs(a: string, b: string): number {
   return a.localeCompare(b)
 }
 
+// Debounce hook — delays updating the value until the user
+// stops typing for `delay` ms. Fixes the 416ms INP by avoiding
+// filtering 1755 patients on every single keystroke.
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return debounced
+}
+
 export default function PatientsTable({ patients }: { patients: Patient[] }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('file_number')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  // Only filter after user pauses typing for 200ms
+  const debouncedSearch = useDebounce(search, 200)
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -50,24 +61,20 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
   }
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim()
+    const q = debouncedSearch.toLowerCase().trim()
     return patients
       .filter(p =>
         !q ||
         p.full_name?.toLowerCase().includes(q) ||
         p.phone?.includes(q) ||
-        // Search checks both file_number and legacy_id so staff can
-        // type either and find the right patient
         (p.file_number ?? '').toLowerCase().includes(q) ||
         String(p.legacy_id ?? '').includes(q)
       )
       .sort((a, b) => {
         let result = 0
-
         if (sortKey === 'file_number') {
           const ra = patientRef(a)
           const rb = patientRef(b)
-          // Push '—' (no reference) to the bottom regardless of direction
           if (ra === '—' && rb === '—') result = 0
           else if (ra === '—') result = 1
           else if (rb === '—') result = -1
@@ -77,14 +84,13 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
           const bv = (b[sortKey] ?? '').toString().toLowerCase()
           result = av < bv ? -1 : av > bv ? 1 : 0
         }
-
         return sortDir === 'asc' ? result : -result
       })
-  }, [patients, search, sortKey, sortDir])
+  }, [patients, debouncedSearch, sortKey, sortDir])
 
   return (
     <div>
-      {/* Search input */}
+      {/* Search */}
       <div className="relative mb-2">
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4"
@@ -140,27 +146,27 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
         <thead>
           <tr className="border-b border-gray-200">
             <th
-              className="cursor-pointer py-2 pr-4 text-xs font-semibold
-                         text-muted-foreground select-none"
               onClick={() => toggleSort('file_number')}
+              className="cursor-pointer py-2 pr-6 text-xs font-semibold
+                         text-muted-foreground select-none w-28"
             >
               File no. <SortIcon col="file_number" />
             </th>
             <th
-              className="cursor-pointer py-2 pr-4 text-xs font-semibold
-                         text-muted-foreground select-none"
               onClick={() => toggleSort('full_name')}
+              className="cursor-pointer py-2 pr-6 text-xs font-semibold
+                         text-muted-foreground select-none"
             >
               Name <SortIcon col="full_name" />
             </th>
             <th
-              className="cursor-pointer py-2 pr-4 text-xs font-semibold
-                         text-muted-foreground select-none"
               onClick={() => toggleSort('sex')}
+              className="cursor-pointer py-2 pr-16 text-xs font-semibold
+                         text-muted-foreground select-none w-28"
             >
               Sex <SortIcon col="sex" />
             </th>
-            <th className="py-2 pr-4 text-xs font-semibold text-muted-foreground">
+            <th className="py-2 text-xs font-semibold text-muted-foreground">
               Phone
             </th>
           </tr>
@@ -180,12 +186,15 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
               className="border-b border-gray-100 hover:bg-gray-50
                          cursor-pointer transition-colors"
             >
-              <td className="py-3 pr-4 text-muted-foreground text-xs font-mono">
+              <td className="py-3 pr-6 text-muted-foreground text-xs font-mono w-28">
                 {patientRef(p)}
               </td>
-              <td className="py-3 pr-4 font-medium">{p.full_name}</td>
-              <td className="py-3 pr-4 text-muted-foreground">{p.sex ?? '—'}</td>
-              <td className="py-3 pr-4 text-muted-foreground">{p.phone ?? '—'}</td>
+              <td className="py-3 pr-6 font-medium">{p.full_name}</td>
+              {/* pr-16 adds the extra breathing room between Sex and Phone */}
+              <td className="py-3 pr-16 text-muted-foreground w-28">
+                {p.sex ?? '—'}
+              </td>
+              <td className="py-3 text-muted-foreground">{p.phone ?? '—'}</td>
             </tr>
           ))}
         </tbody>

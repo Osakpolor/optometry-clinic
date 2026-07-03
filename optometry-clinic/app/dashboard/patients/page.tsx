@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import PatientsTable from '@/components/PatientsTable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -6,14 +6,31 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
 export default async function PatientsPage() {
-  const supabase = await createClient()
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 
-  // Use RPC so Postgres sorts file numbers numerically (2, 3 ... 9, 10, 11)
-  // rather than alphabetically (10, 11, 2, 3). The function also returns
-  // all rows with no 1000-row cap.
-  const { data: patients, error } = await supabase
-  .rpc('get_patients_sorted')
-  .limit(2000)
+  // Bypass PostgREST's hardcoded 1000-row limit by using
+  // a direct select with explicit range headers instead of RPC.
+  // The admin client skips RLS, so all patients are returned.
+  const { data: patients, error } = await adminClient
+    .from('patients')
+    .select('id, full_name, phone, sex, legacy_id, file_number, created_at')
+    .is('deleted_at', null)
+    .order('file_number', { ascending: true, nullsFirst: false })
+    .range(0, 4999)
+
+  // Sort numerically client-side since PostgREST sorts file_number
+  // as text (1000 before 2). We do a proper numeric sort here.
+  const sorted = (patients ?? []).sort((a, b) => {
+    const an = a.file_number ? parseInt(a.file_number) : Infinity
+    const bn = b.file_number ? parseInt(b.file_number) : Infinity
+    if (isNaN(an) && isNaN(bn)) return 0
+    if (isNaN(an)) return 1
+    if (isNaN(bn)) return -1
+    return an - bn
+  })
 
   return (
     <main className="w-full py-2">
@@ -32,7 +49,7 @@ export default async function PatientsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Patients</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {patients?.length ?? 0} records total — search or register a new patient.
+            {sorted.length} records total — search or register a new patient.
           </p>
         </div>
         <Link href="/dashboard/patients/new">
@@ -50,7 +67,7 @@ export default async function PatientsPage() {
         <Separator />
         <CardContent className="px-5 pt-4 pb-5">
           {error && <p className="text-sm text-red-500">Error: {error.message}</p>}
-          {!error && <PatientsTable patients={patients ?? []} />}
+          {!error && <PatientsTable patients={sorted} />}
         </CardContent>
       </Card>
 

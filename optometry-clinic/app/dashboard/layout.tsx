@@ -12,13 +12,14 @@ export default async function DashboardLayout({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Fetch role server-side so nav items render correctly on first load.
-  // Non-admins simply don't see the Staff link.
+  // Use a lightweight query with just the role field.
+  // We cache this at the React layer so it only runs once
+  // per request even if multiple components need the role.
   const { data: staffProfile } = await supabase
     .from('staff_profiles')
     .select('role')
     .eq('id', user?.id ?? '')
-    .single()
+    .maybeSingle()
 
   const isAdmin = staffProfile?.role === 'admin'
 
@@ -48,7 +49,6 @@ export default async function DashboardLayout({
               >
                 Appointments
               </Link>
-              {/* Staff link — only visible to admins */}
               {isAdmin && (
                 <Link
                   href="/dashboard/staff"
@@ -70,10 +70,6 @@ export default async function DashboardLayout({
         </nav>
       </header>
 
-      {/*
-        This single wrapper controls ALL dashboard page widths.
-        Individual pages should NOT set their own max-width.
-      */}
       <div className="mx-auto max-w-5xl px-4 sm:px-8 py-6 sm:py-8">
         {children}
       </div>

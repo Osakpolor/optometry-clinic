@@ -17,13 +17,24 @@ type Props = {
   patientName: string
 }
 
+// Collapse ALL whitespace (including non-breaking spaces and internal
+// double spaces from the Access/Word migration) down to single spaces,
+// then trim and lowercase. This makes the confirmation tolerant of
+// invisible whitespace differences that .trim() alone can't fix.
+function normalizeName(s: string): string {
+  return s
+    .replace(/\s+/g, ' ')  // any run of whitespace → single space
+    .trim()
+    .toLowerCase()
+}
+
 export function DeletePatientButton({ patientId, patientName }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [confirmName, setConfirmName] = useState('')
   const [isPending, startTransition] = useTransition()
 
-  const nameMatches = confirmName.trim().toLowerCase() === patientName.trim().toLowerCase()
+  const nameMatches = normalizeName(confirmName) === normalizeName(patientName)
 
   function handleOpen() {
     setConfirmName('')

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { updateStaffRole, toggleStaffActive } from '@/app/actions/staffActions'
 import { useRouter } from 'next/navigation'
+import { DeleteStaffButton } from '@/components/staff/DeleteStaffButton'
 
 type StaffMember = {
   id: string
@@ -162,6 +163,7 @@ function StaffRow({
         )}
 
         {/* Activate / Deactivate */}
+      {/* Activate / Deactivate */}
         {!isSelf && (
           <Button
             size="sm"
@@ -176,6 +178,12 @@ function StaffRow({
           >
             {isPending ? '…' : member.is_active ? 'Deactivate' : 'Reactivate'}
           </Button>
+        )}
+
+        {/* Delete — admin-only (this whole list is admin-only), blocked
+            server-side if the member has recorded clinical visits */}
+        {!isSelf && (
+          <DeleteStaffButton staffId={member.id} staffName={member.full_name} />
         )}
       </div>
     </div>

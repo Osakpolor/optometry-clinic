@@ -135,3 +135,65 @@ export async function toggleStaffActive(staffId: string, isActive: boolean) {
   if (error) return { error: error.message }
   return { success: true }
 }
+
+export async function deleteStaffMember(staffId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated' }
+
+  // Only admins can delete staff
+  const { data: staffProfile } = await supabase
+    .from('staff_profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (staffProfile?.role !== 'admin') {
+    return { error: 'Only admins can delete staff members.' }
+  }
+
+  // An admin cannot delete themselves
+  if (staffId === user.id) {
+    return { error: 'You cannot delete your own account.' }
+  }
+
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  // SAFETY CHECK (Option A): block deletion if this staff member has
+  // recorded any clinical visits. Their doctor_id is attached to real
+  // patient medical records, which must never be orphaned or lost.
+  const { count: visitCount, error: visitError } = await adminClient
+    .from('visit_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('doctor_id', staffId)
+
+  if (visitError) {
+    return { error: `Could not verify clinical records: ${visitError.message}` }
+  }
+
+  if ((visitCount ?? 0) > 0) {
+    return {
+      error:
+        `This staff member has recorded ${visitCount} clinical visit(s) and cannot be deleted, ` +
+        `because their name is attached to patient medical records. ` +
+        `Deactivate them instead to preserve those records.`,
+    }
+  }
+
+  // No clinical history — safe to delete.
+  // 1. Delete the auth user. Because staff_profiles.id references
+  //    auth.users(id) ON DELETE CASCADE, removing the auth user also
+  //    removes the staff_profiles row automatically. And audit_log.staff_id
+  //    is now ON DELETE SET NULL, so audit history is preserved.
+  const { error: authDeleteError } =
+    await adminClient.auth.admin.deleteUser(staffId)
+
+  if (authDeleteError) {
+    return { error: `Failed to delete staff account: ${authDeleteError.message}` }
+  }
+
+  return { success: true }
+}

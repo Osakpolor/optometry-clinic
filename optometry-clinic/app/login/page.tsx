@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -18,6 +18,10 @@ export default function LoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const email = emailRef.current?.value.trim() ?? ''
+    const password = passwordRef.current?.value ?? ''
+    if (!email || !password) return
+
     setLoading(true)
     setErrorMsg('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -37,11 +41,11 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" required type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="doctor@olueyeclinic.com" />
+              <Input id="email" ref={emailRef} required type="email" placeholder="doctor@olueyeclinic.com" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" required type="password" value={password} onChange={e => setPassword(e.target.value)} />
+              <Input id="password" ref={passwordRef} required type="password" />
             </div>
             <Button type="submit" disabled={loading} className="w-full mt-2">
               {loading ? 'Signing in…' : 'Sign in'}

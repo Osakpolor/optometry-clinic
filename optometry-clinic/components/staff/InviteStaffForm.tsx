@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
@@ -15,16 +15,19 @@ const ROLES = [
 type Role = 'receptionist' | 'doctor' | 'admin'
 
 export function InviteStaffForm() {
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const fullNameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
   const [role, setRole] = useState<Role>('receptionist')
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
+    const fullName = fullNameRef.current?.value.trim() ?? ''
+    const email = emailRef.current?.value.trim() ?? ''
+    if (!fullName || !email) return
 
-    const result = await inviteStaffMember(email.trim(), fullName.trim(), role)
+    setLoading(true)
+    const result = await inviteStaffMember(email, fullName, role)
     setLoading(false)
 
     if (result?.error) {
@@ -33,8 +36,8 @@ export function InviteStaffForm() {
     }
 
     toast.success(`Invitation sent to ${email}. They'll receive an email to set their password.`)
-    setFullName('')
-    setEmail('')
+    if (fullNameRef.current) fullNameRef.current.value = ''
+    if (emailRef.current) emailRef.current.value = ''
     setRole('receptionist')
   }
 
@@ -47,9 +50,8 @@ export function InviteStaffForm() {
             Full name
           </label>
           <Input
+            ref={fullNameRef}
             required
-            value={fullName}
-            onChange={e => setFullName(e.target.value)}
             placeholder="Dr. Chukwuma Eze"
             className="text-sm"
           />
@@ -59,10 +61,9 @@ export function InviteStaffForm() {
             Email address
           </label>
           <Input
+            ref={emailRef}
             required
             type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
             placeholder="doctor@olueye.clinic"
             className="text-sm"
           />

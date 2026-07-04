@@ -2,12 +2,16 @@ import { createClient } from '@/lib/supabase/server'
 import EditVisitForm from '@/components/EditVisitForm'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { getUserRole, canManageVisits } from '@/lib/auth/roles'
 
 export default async function EditVisitPage({ params }: { params: Promise<{ id: string; visitId: string }> }) {
   const { id, visitId } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const userRole = await getUserRole()
+  if (!canManageVisits(userRole)) redirect(`/dashboard/patients/${id}`)
 
   const { data: visit, error } = await supabase
     .from('visit_records')

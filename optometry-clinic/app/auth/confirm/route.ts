@@ -2,24 +2,33 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
+  const { searchParams, origin } = new URL(request.url)
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type')
 
-  if (token_hash && type) {
+  // Supabase sends the invite token as a query param when the
+  // email template uses {{ .TokenHash }}. We exchange it here
+  // server-side, which creates a session, then redirect the
+  // staff member to the set-password page.
+  if (token_hash && type === 'invite') {
     const supabase = await createClient()
 
     const { error } = await supabase.auth.verifyOtp({
-      type: type as 'invite' | 'recovery' | 'email',
+      type: 'invite',
       token_hash,
     })
 
     if (!error) {
-      return NextResponse.redirect(new URL('/auth/set-password', request.url))
+      // Session is now active — send to set-password
+      return NextResponse.redirect(`${origin}/auth/set-password`)
     }
+
+    // Token exchange failed (expired, already used etc.)
+    return NextResponse.redirect(
+      `${origin}/auth/error?message=Invite+link+expired+or+already+used`
+    )
   }
 
-  // If no token_hash, maybe Supabase already established a session via hash fragment
-  // Redirect to a client-side page that can detect the session and redirect
-  return NextResponse.redirect(new URL('/auth/set-password', request.url))
+  // No token in URL — send to login
+  return NextResponse.redirect(`${origin}/login`)
 }

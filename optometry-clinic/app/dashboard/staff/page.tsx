@@ -1,6 +1,5 @@
-// app/dashboard/staff/page.tsx
-
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -15,7 +14,7 @@ export default async function StaffPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Only admins can access this page
+  // Check role using regular client (user can see their own row)
   const { data: currentStaff } = await supabase
     .from('staff_profiles')
     .select('role, full_name')
@@ -32,8 +31,13 @@ export default async function StaffPage() {
     )
   }
 
-  // Fetch all staff members
-  const { data: staffMembers } = await supabase
+  // Use admin client to bypass RLS and fetch ALL staff
+  const adminClient = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
+  const { data: staffMembers } = await adminClient
     .from('staff_profiles')
     .select('id, full_name, email, role, is_active, created_at')
     .order('created_at', { ascending: true })

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,7 +45,15 @@ export default function LoginPage() {
               <Input id="email" ref={emailRef} required type="email" placeholder="doctor@olueyeclinic.com" />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs text-brand hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <Input id="password" ref={passwordRef} required type="password" />
             </div>
             <Button type="submit" disabled={loading} className="w-full mt-2">

@@ -2,33 +2,42 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type')
+  const code = searchParams.get('code')
 
-  // Supabase sends the invite token as a query param when the
-  // email template uses {{ .TokenHash }}. We exchange it here
-  // server-side, which creates a session, then redirect the
-  // staff member to the set-password page.
+  const setPasswordUrl = new URL('/auth/set-password', request.url)
+  const errorUrl = new URL('/auth/error', request.url)
+  const loginUrl = new URL('/login', request.url)
+
+  const supabase = await createClient()
+
+  // Handle PKCE code exchange (newer Supabase format)
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(setPasswordUrl)
+    }
+  }
+
+  // Handle token_hash format (older Supabase format)
   if (token_hash && type === 'invite') {
-    const supabase = await createClient()
-
     const { error } = await supabase.auth.verifyOtp({
       type: 'invite',
       token_hash,
     })
 
     if (!error) {
-      // Session is now active — send to set-password
-      return NextResponse.redirect(`${origin}/auth/set-password`)
+      return NextResponse.redirect(setPasswordUrl)
     }
 
-    // Token exchange failed (expired, already used etc.)
-    return NextResponse.redirect(
-      `${origin}/auth/error?message=Invite+link+expired+or+already+used`
+    errorUrl.searchParams.set(
+      'message',
+      'Invite link expired or already used. Ask your admin to resend.'
     )
+    return NextResponse.redirect(errorUrl)
   }
 
-  // No token in URL — send to login
-  return NextResponse.redirect(`${origin}/login`)
+  return NextResponse.redirect(loginUrl)
 }

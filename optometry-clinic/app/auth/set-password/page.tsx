@@ -20,12 +20,12 @@ export default function SetPasswordPage() {
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
-        // No active session — invite link wasn't used correctly
+        // No session at all — not a valid invite flow
         router.push('/login')
         return
       }
 
-      // Grab their name from staff_profiles to personalise the page
+      // Get their name to personalise the page
       const { data: profile } = await supabase
         .from('staff_profiles')
         .select('full_name')
@@ -36,11 +36,13 @@ export default function SetPasswordPage() {
         setUserName(profile.full_name)
       }
 
+      // Always show the set-password form — never redirect to dashboard
+      // from this page. The user must explicitly set their password first.
       setChecking(false)
     }
 
     checkSession()
-  }, [router, supabase])
+  }, [supabase, router])
 
   async function handleSetPassword() {
     setError(null)
@@ -55,9 +57,7 @@ export default function SetPasswordPage() {
     }
 
     setLoading(true)
-
     const { error } = await supabase.auth.updateUser({ password })
-
     setLoading(false)
 
     if (error) {
@@ -65,11 +65,9 @@ export default function SetPasswordPage() {
       return
     }
 
-    // Password set — take them straight to the dashboard
     router.push('/dashboard')
   }
 
-  // Show a neutral loading state while we verify the session
   if (checking) {
     return (
       <div className="min-h-screen bg-[#f9fafb] flex items-center justify-center">
@@ -106,7 +104,7 @@ export default function SetPasswordPage() {
           </p>
         </div>
 
-        {/* Form card */}
+        {/* Form */}
         <div className="bg-white border border-[#e5e7eb] rounded-lg p-6
                         shadow-sm space-y-4">
 
@@ -145,7 +143,6 @@ export default function SetPasswordPage() {
             />
           </div>
 
-          {/* Password strength hint */}
           {password.length > 0 && password.length < 8 && (
             <p className="text-xs text-amber-600">
               {8 - password.length} more character{8 - password.length !== 1 ? 's' : ''} needed

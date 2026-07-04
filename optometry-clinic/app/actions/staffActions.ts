@@ -11,7 +11,6 @@ export async function inviteStaffMember(
   fullName: string,
   role: Role
 ) {
-  // Verify the requesting user is an admin
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -39,18 +38,11 @@ export async function inviteStaffMember(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // redirectTo points to /auth/confirm which then redirects to
-  // /auth/set-password — this is the key fix so staff land on
-  // the set-password page instead of the dashboard after clicking
-  // the invite link.
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
 
   const { data: inviteData, error: inviteError } =
     await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: {
-        full_name: fullName,
-        role,
-      },
+      data: { full_name: fullName, role },
       redirectTo: `${siteUrl}/auth/confirm`,
     })
 
@@ -61,10 +53,11 @@ export async function inviteStaffMember(
     return { error: inviteError.message }
   }
 
-  // Create the staff_profile row immediately
+  // Use upsert so a re-invite for an existing auth user updates the row
+  // instead of colliding on the primary key.
   const { error: profileError } = await adminClient
     .from('staff_profiles')
-    .insert({
+    .upsert({
       id: inviteData.user.id,
       full_name: fullName,
       email,
@@ -72,8 +65,12 @@ export async function inviteStaffMember(
       is_active: true,
     })
 
+  // If the profile row fails, surface it instead of hiding it — otherwise
+  // the user can log in but has no role, leads, or follow-ups.
   if (profileError) {
-    console.error('Staff profile insert error:', profileError)
+    return {
+      error: `Invite email was sent, but creating the staff profile failed: ${profileError.message}. The account will not work until this is fixed.`,
+    }
   }
 
   return { success: true }

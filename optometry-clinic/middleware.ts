@@ -32,12 +32,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Redirect already logged-in users away from auth pages
-  if (user && request.nextUrl.pathname.startsWith('/auth/set-password')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // NOTE: We intentionally do NOT redirect authenticated users away from
+  // /auth/set-password. Newly invited staff get a session created by
+  // /auth/confirm BEFORE they've set a password — if we bounce logged-in
+  // users away from this page, invited staff never get the chance to
+  // actually set their password and land straight on the dashboard
+  // with an unusable/unknown password instead.
 
   return supabaseResponse
 }
@@ -45,6 +45,5 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/dashboard/:path*',
-    '/auth/set-password',
   ],
 }

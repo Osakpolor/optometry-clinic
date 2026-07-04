@@ -3,7 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
-// Valid roles for staff members
 const VALID_ROLES = ['admin', 'doctor', 'receptionist'] as const
 type Role = typeof VALID_ROLES[number]
 
@@ -12,7 +11,7 @@ export async function inviteStaffMember(
   fullName: string,
   role: Role
 ) {
-  // 1. Verify the requesting user is an admin
+  // Verify the requesting user is an admin
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
@@ -27,42 +26,42 @@ export async function inviteStaffMember(
     return { error: 'Only admins can invite staff members.' }
   }
 
-  // 2. Validate inputs
   if (!email || !fullName || !role) {
     return { error: 'Email, name and role are all required.' }
   }
+
   if (!VALID_ROLES.includes(role)) {
     return { error: 'Invalid role.' }
   }
 
-  // 3. Use the Supabase Admin client to send the invite email.
-  //    This requires the service role key — never exposed to the client.
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
-    email,
-    {
+  // redirectTo points to /auth/confirm which then redirects to
+  // /auth/set-password — this is the key fix so staff land on
+  // the set-password page instead of the dashboard after clicking
+  // the invite link.
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+
+  const { data: inviteData, error: inviteError } =
+    await adminClient.auth.admin.inviteUserByEmail(email, {
       data: {
         full_name: fullName,
         role,
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/dashboard`,
-    }
-  )
+      redirectTo: `${siteUrl}/auth/confirm`,
+    })
 
   if (inviteError) {
-    // User already exists in Auth
     if (inviteError.message.includes('already been registered')) {
       return { error: 'A staff member with this email already exists.' }
     }
     return { error: inviteError.message }
   }
 
-  // 4. Create the staff_profile row immediately so the user
-  //    appears in the staff list before they accept the invite.
+  // Create the staff_profile row immediately
   const { error: profileError } = await adminClient
     .from('staff_profiles')
     .insert({
@@ -74,7 +73,6 @@ export async function inviteStaffMember(
     })
 
   if (profileError) {
-    // Profile might already exist — not a fatal error
     console.error('Staff profile insert error:', profileError)
   }
 
@@ -96,7 +94,6 @@ export async function updateStaffRole(staffId: string, newRole: Role) {
     return { error: 'Only admins can change roles.' }
   }
 
-  // Prevent admin from demoting themselves
   if (staffId === user.id) {
     return { error: 'You cannot change your own role.' }
   }

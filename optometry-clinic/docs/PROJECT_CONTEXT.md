@@ -65,10 +65,10 @@ optometry-clinic/
 │   │           ├── page.tsx        ← role-gated New visit / Delete buttons
 │   │           ├── appointments/new/page.tsx
 │   │           └── visits/
-│   │               ├── new/page.tsx        ← STILL NEEDS server-side role guard
+│   │               ├── new/page.tsx        ← server-side role guard confirmed
 │   │               └── [visitId]/
 │   │                   ├── page.tsx        ← role-gated Edit visit button
-│   │                   └── edit/page.tsx   ← STILL NEEDS server-side role guard
+│   │                   └── edit/page.tsx   ← server-side role guard confirmed
 │   ├── book/page.tsx
 │   ├── login/page.tsx
 │   ├── services/page.tsx
@@ -144,9 +144,9 @@ optometry-clinic/
 2. File number system, admin-only edit/reassign, every patient now has
    exactly one valid non-conflicting number (see below)
 3. Staff management — invite/role/deactivate, working end-to-end
-4. Role-based access control — buttons hidden per role
-   **(server-side page guards for `/visits/new` and `/visits/[id]/edit`
-   still outstanding — see "Next up")**
+4. Role-based access control — buttons hidden per role, AND
+   server-side redirect guards on `/visits/new` and `/visits/[id]/edit`
+   confirmed in place. Fully complete.
 5. Soft delete, admin-only, typed-name confirmation
 6. Legacy document viewer on patient profiles
 7. Visit detail dual-format rendering
@@ -200,24 +200,29 @@ migration. Full audit + sync pipeline built and run to completion:
    with no `legacy_id` at all got a fresh number outright. **Every
    patient now has exactly one valid file_number — this data
    integrity work is fully closed out.**
+6. **Dashboard patient count fixed** — was showing all rows including
+   soft-deleted duplicates (1958) instead of matching the patient list
+   (1865). Root cause: the count query had no `deleted_at IS NULL`
+   filter. Fixed in `app/dashboard/page.tsx`.
+7. **Search restricted to name + file number only** — phone number
+   removed from the search filter in `PatientsTable.tsx` per clinic
+   preference (phone still displays in the table, just isn't matched
+   by the search box).
 
 ---
 
 ## NEXT UP
 
-1. **Finish role-based access control** — add server-side redirect
-   guards to `app/dashboard/patients/[id]/visits/new/page.tsx` and
-   `app/dashboard/patients/[id]/visits/[visitId]/edit/page.tsx` using
-   `getUserRole()` + `canManageVisits()` from `lib/auth/roles.ts`.
-   Buttons are already hidden in the UI, but a receptionist could
-   still reach these pages by typing the URL directly — needs a
-   proper redirect, not just a hidden button. **This is the one real
-   remaining gap before launch.**
-2. Review `unmatched_docs_review.csv` remnants (a handful of rows with
+1. Review `unmatched_docs_review.csv` remnants (a handful of rows with
    no matched_file_number were skipped) — whenever convenient, not
    launch-blocking.
+2. ~120 gaps in the file_number sequence confirmed as inherited from
+   the clinic's original paper filing system (pre-existing gaps, not
+   a bug) — no action needed, this was investigated and closed out.
 3. Consider trimming this doc for Claude Project knowledge size limits
    as it keeps growing.
+
+**All launch-blocking work is now complete.**
 
 ---
 

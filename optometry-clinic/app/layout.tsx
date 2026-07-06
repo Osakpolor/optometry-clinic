@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SiteNav from '@/components/SiteNav'
-import SignOutButton from '@/components/SignOutButton'
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,7 +18,6 @@ export const metadata: Metadata = {
   description: 'Clinic management system for Olu Eye Clinic, Benin City.',
   icons: {
     icon: [
-      { url: '/favicon.ico' },
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
       { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
     ],
@@ -38,9 +36,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body 
-      suppressHydrationWarning
-      className="min-h-full flex flex-col"><SiteNav />{children}</body>
+      <body
+        suppressHydrationWarning
+        className="min-h-full flex flex-col"
+      >
+        <SiteNav />
+        {children}
+      </body>
     </html>
   );
 }

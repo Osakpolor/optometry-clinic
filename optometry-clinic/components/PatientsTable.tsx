@@ -30,8 +30,8 @@ function compareRefs(a: string, b: string): number {
 }
 
 // Debounce hook — delays updating the value until the user
-// stops typing for `delay` ms. Fixes the 416ms INP by avoiding
-// filtering 1755 patients on every single keystroke.
+// stops typing for `delay` ms, keeping search responsive on
+// large patient lists.
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -47,7 +47,6 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('file_number')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  // Only filter after user pauses typing for 200ms
   const debouncedSearch = useDebounce(search, 200)
 
   function toggleSort(key: SortKey) {
@@ -65,8 +64,9 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
     return patients
       .filter(p =>
         !q ||
+        // Search by name or file number only — phone intentionally
+        // excluded per clinic preference.
         p.full_name?.toLowerCase().includes(q) ||
-        p.phone?.includes(q) ||
         (p.file_number ?? '').toLowerCase().includes(q) ||
         String(p.legacy_id ?? '').includes(q)
       )
@@ -102,7 +102,7 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
         </svg>
         <input
           type="text"
-          placeholder="Search returning patient by name, phone or file number…"
+          placeholder="Search returning patient by name or file number…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-3 text-base rounded-lg border-2 border-gray-200
@@ -190,7 +190,6 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
                 {patientRef(p)}
               </td>
               <td className="py-3 pr-6 font-medium">{p.full_name}</td>
-              {/* pr-16 adds the extra breathing room between Sex and Phone */}
               <td className="py-3 pr-16 text-muted-foreground w-28">
                 {p.sex ?? '—'}
               </td>

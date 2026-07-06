@@ -21,7 +21,13 @@ export default async function DashboardPage() {
     { data: recentPatients },
     { data: activeLeads },
   ] = await Promise.all([
-    supabase.from('patients').select('*', { count: 'exact', head: true }),
+    // Filter out soft-deleted patients so this count matches the
+    // patient list page. Without this, soft-deleted duplicates
+    // (deleted_at set, but the row still exists) inflate the total.
+    supabase
+      .from('patients')
+      .select('*', { count: 'exact', head: true })
+      .is('deleted_at', null),
     supabase
       .from('appointments')
       .select('id, patient_id, appointment_date, service_type, status, patients(full_name, phone)')
@@ -39,6 +45,7 @@ export default async function DashboardPage() {
     supabase
       .from('patients')
       .select('id, full_name, phone, created_at')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(5),
     supabase

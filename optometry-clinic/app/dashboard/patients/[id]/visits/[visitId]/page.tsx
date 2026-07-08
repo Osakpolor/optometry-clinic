@@ -310,6 +310,13 @@ export default async function VisitDetailPage({
     )
   }
 
+  console.log('DEBUG visit doctor/editor:', JSON.stringify({
+    doctor_id: visit.doctor_id,
+    doctor: (visit as any).doctor,
+    updated_by: visit.updated_by,
+    editor: (visit as any).editor,
+  }, null, 2))
+
   const e: Record<string, any> = visit.eye_test_results ?? {}
   const r: Record<string, any> = visit.refraction ?? {}
   const ant: Record<string, any> = visit.anterior_segment ?? {}

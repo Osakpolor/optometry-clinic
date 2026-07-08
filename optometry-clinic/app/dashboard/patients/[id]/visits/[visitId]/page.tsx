@@ -298,24 +298,13 @@ export default async function VisitDetailPage({
     .eq('record_id', visitId)
     .order('created_at', { ascending: true })
 
-  if (error || !visit) {
-    console.error('Visit query error:', error)
+ if (error || !visit) {
     return (
       <main className="w-full py-2">
         <p className="text-red-500 text-sm">Visit not found.</p>
-        <pre className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
-          {JSON.stringify(error, null, 2)}
-        </pre>
       </main>
     )
   }
-
-  console.log('DEBUG visit doctor/editor:', JSON.stringify({
-    doctor_id: visit.doctor_id,
-    doctor: (visit as any).doctor,
-    updated_by: visit.updated_by,
-    editor: (visit as any).editor,
-  }, null, 2))
 
   const e: Record<string, any> = visit.eye_test_results ?? {}
   const r: Record<string, any> = visit.refraction ?? {}

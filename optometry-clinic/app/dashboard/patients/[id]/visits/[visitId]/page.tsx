@@ -278,7 +278,11 @@ export default async function VisitDetailPage({
 
   const { data: visit, error } = await supabase
     .from('visit_records')
-    .select('*, staff_profiles(full_name)')
+    .select(`
+      *,
+      doctor:staff_profiles!visit_records_doctor_id_fkey(full_name),
+      editor:staff_profiles!visit_records_updated_by_fkey(full_name)
+    `)
     .eq('id', visitId)
     .single()
 
@@ -295,9 +299,13 @@ export default async function VisitDetailPage({
     .order('created_at', { ascending: true })
 
   if (error || !visit) {
+    console.error('Visit query error:', error)
     return (
       <main className="w-full py-2">
         <p className="text-red-500 text-sm">Visit not found.</p>
+        <pre className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
+          {JSON.stringify(error, null, 2)}
+        </pre>
       </main>
     )
   }
@@ -334,13 +342,20 @@ export default async function VisitDetailPage({
               year: 'numeric',
             })}
           </h1>
-          <div className="mt-2 flex items-center gap-2">
+         <div className="mt-2 flex items-center gap-2">
             <Badge variant="outline" className="text-xs">
               Patient {patientRef}
             </Badge>
             <span className="text-sm text-muted-foreground">
-              Seen by {(visit as any).staff_profiles?.full_name ?? 'Unknown'}
+              {(visit as any).doctor?.full_name
+                ? `Seen by ${(visit as any).doctor.full_name}`
+                : 'Imported record'}
             </span>
+            {(visit as any).editor?.full_name && (
+              <span className="text-sm text-muted-foreground">
+                · Last edited by {(visit as any).editor.full_name}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">

@@ -46,7 +46,10 @@ export default async function PatientDetailPage({
 
   const { data: visits } = await supabase
     .from('visit_records')
-    .select('id, visit_date, reason_for_visit, diagnosis, staff_profiles(full_name)')
+    .select(`
+      id, visit_date, reason_for_visit, diagnosis,
+      staff_profiles!visit_records_doctor_id_fkey(full_name)
+    `)
     .eq('patient_id', id)
     .order('visit_date', { ascending: false })
 

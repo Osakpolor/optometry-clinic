@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, FormEvent, ReactNode } from 'react'
+import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -144,6 +144,9 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const router = useRouter()
   const supabase = createClient()
 
+  // Draft key is unique per patient so drafts never bleed across patients.
+  const DRAFT_KEY = `visit-draft:${patientId}`
+
   // Presenting complaint
   const [reasonForVisit, setReasonForVisit] = useState('')
   const [symptoms, setSymptoms] = useState('')
@@ -258,6 +261,153 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
+  // ── Autosave state ──
+  // draftFound: a saved draft was detected on mount (show restore banner)
+  // draftData:  the parsed draft, held until the user chooses restore/discard
+  // lastSaved:  timestamp label shown in the "saved" indicator
+  // restored:   becomes true once we've either restored or discarded, so the
+  //             restore banner disappears and autosave can begin writing.
+  const [draftFound, setDraftFound] = useState(false)
+  const [draftData, setDraftData] = useState<any>(null)
+  const [draftSavedAt, setDraftSavedAt] = useState<string>('')
+  const [lastSaved, setLastSaved] = useState<string>('')
+  const [restored, setRestored] = useState(false)
+
+  // Guards so we don't autosave before the mount-time draft check has run.
+  const hydratedRef = useRef(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Collect every field into one serialisable object. Anything added to the
+  // form later should be added here too so it's covered by autosave.
+  function collectFormData() {
+    return {
+      reasonForVisit, symptoms, lastEyeExam, medicalHistory, age, bp,
+      hasPrx, sphPrxOD, cylPrxOD, axisPrxOD, addPrxOD, sphPrxOS, cylPrxOS, axisPrxOS, addPrxOS,
+      vaType, vaChart, vaFarOD, vaFarODAdd, vaFarOS, vaFarOSAdd, vaNearOD, vaNearOS,
+      vaPinholeOD, vaPinholeODAdd, vaPinholeOS, vaPinholeOSAdd,
+      pxVaFarOD, pxVaFarODAdd, pxVaFarOS, pxVaFarOSAdd, pxVaNearOD, pxVaNearOS,
+      sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
+      iopOD, iopOS, anteriorOD, anteriorOS,
+      discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
+      sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
+      retVaFarOD, retVaFarODAdd, retVaFarOS, retVaFarOSAdd, retVaNearOD, retVaNearOS,
+      sphSubOD, cylSubOD, axisSubOD, addSubOD, sphSubOS, cylSubOS, axisSubOS, addSubOS,
+      sphFinalOD, cylFinalOD, axisFinalOD, addFinalOD, sphFinalOS, cylFinalOS, axisFinalOS, addFinalOS,
+      finalVaFarOD, finalVaFarODAdd, finalVaFarOS, finalVaFarOSAdd, finalVaNearOD, finalVaNearOS,
+      diagnosis, drugs, hasReferral, referralFor, refDate, nextAppointment, notes,
+    }
+  }
+
+  // Apply a parsed draft object back into all the form fields.
+  function applyDraft(d: any) {
+    if (!d) return
+    setReasonForVisit(d.reasonForVisit ?? ''); setSymptoms(d.symptoms ?? '')
+    setLastEyeExam(d.lastEyeExam ?? ''); setMedicalHistory(d.medicalHistory ?? '')
+    setAge(d.age ?? ''); setBp(d.bp ?? '')
+    setHasPrx(d.hasPrx ?? 'No')
+    setSphPrxOD(d.sphPrxOD ?? ''); setCylPrxOD(d.cylPrxOD ?? ''); setAxisPrxOD(d.axisPrxOD ?? ''); setAddPrxOD(d.addPrxOD ?? '')
+    setSphPrxOS(d.sphPrxOS ?? ''); setCylPrxOS(d.cylPrxOS ?? ''); setAxisPrxOS(d.axisPrxOS ?? ''); setAddPrxOS(d.addPrxOS ?? '')
+    setVaType(d.vaType ?? 'Analog'); setVaChart(d.vaChart ?? 'Snellen')
+    setVaFarOD(d.vaFarOD ?? ''); setVaFarODAdd(d.vaFarODAdd ?? ''); setVaFarOS(d.vaFarOS ?? ''); setVaFarOSAdd(d.vaFarOSAdd ?? '')
+    setVaNearOD(d.vaNearOD ?? ''); setVaNearOS(d.vaNearOS ?? '')
+    setVaPinholeOD(d.vaPinholeOD ?? ''); setVaPinholeODAdd(d.vaPinholeODAdd ?? ''); setVaPinholeOS(d.vaPinholeOS ?? ''); setVaPinholeOSAdd(d.vaPinholeOSAdd ?? '')
+    setPxVaFarOD(d.pxVaFarOD ?? ''); setPxVaFarODAdd(d.pxVaFarODAdd ?? ''); setPxVaFarOS(d.pxVaFarOS ?? ''); setPxVaFarOSAdd(d.pxVaFarOSAdd ?? '')
+    setPxVaNearOD(d.pxVaNearOD ?? ''); setPxVaNearOS(d.pxVaNearOS ?? '')
+    setSphAutoOD(d.sphAutoOD ?? ''); setCylAutoOD(d.cylAutoOD ?? ''); setAxisAutoOD(d.axisAutoOD ?? '')
+    setSphAutoOS(d.sphAutoOS ?? ''); setCylAutoOS(d.cylAutoOS ?? ''); setAxisAutoOS(d.axisAutoOS ?? '')
+    setIopOD(d.iopOD ?? ''); setIopOS(d.iopOS ?? '')
+    setAnteriorOD(d.anteriorOD ?? ''); setAnteriorOS(d.anteriorOS ?? '')
+    setDiscOD(d.discOD ?? ''); setDiscOS(d.discOS ?? ''); setCupOD(d.cupOD ?? ''); setCupOS(d.cupOS ?? '')
+    setPosteriorOD(d.posteriorOD ?? ''); setPosteriorOS(d.posteriorOS ?? '')
+    setSphRetOD(d.sphRetOD ?? ''); setCylRetOD(d.cylRetOD ?? ''); setAxisRetOD(d.axisRetOD ?? '')
+    setSphRetOS(d.sphRetOS ?? ''); setCylRetOS(d.cylRetOS ?? ''); setAxisRetOS(d.axisRetOS ?? '')
+    setRetVaFarOD(d.retVaFarOD ?? ''); setRetVaFarODAdd(d.retVaFarODAdd ?? ''); setRetVaFarOS(d.retVaFarOS ?? ''); setRetVaFarOSAdd(d.retVaFarOSAdd ?? '')
+    setRetVaNearOD(d.retVaNearOD ?? ''); setRetVaNearOS(d.retVaNearOS ?? '')
+    setSphSubOD(d.sphSubOD ?? ''); setCylSubOD(d.cylSubOD ?? ''); setAxisSubOD(d.axisSubOD ?? ''); setAddSubOD(d.addSubOD ?? '')
+    setSphSubOS(d.sphSubOS ?? ''); setCylSubOS(d.cylSubOS ?? ''); setAxisSubOS(d.axisSubOS ?? ''); setAddSubOS(d.addSubOS ?? '')
+    setSphFinalOD(d.sphFinalOD ?? ''); setCylFinalOD(d.cylFinalOD ?? ''); setAxisFinalOD(d.axisFinalOD ?? ''); setAddFinalOD(d.addFinalOD ?? '')
+    setSphFinalOS(d.sphFinalOS ?? ''); setCylFinalOS(d.cylFinalOS ?? ''); setAxisFinalOS(d.axisFinalOS ?? ''); setAddFinalOS(d.addFinalOS ?? '')
+    setFinalVaFarOD(d.finalVaFarOD ?? ''); setFinalVaFarODAdd(d.finalVaFarODAdd ?? ''); setFinalVaFarOS(d.finalVaFarOS ?? ''); setFinalVaFarOSAdd(d.finalVaFarOSAdd ?? '')
+    setFinalVaNearOD(d.finalVaNearOD ?? ''); setFinalVaNearOS(d.finalVaNearOS ?? '')
+    setDiagnosis(d.diagnosis ?? '')
+    setDrugs(Array.isArray(d.drugs) && d.drugs.length > 0 ? d.drugs : [{ type: '', name: '', freq: '' }])
+    setHasReferral(d.hasReferral ?? 'No'); setReferralFor(d.referralFor ?? ''); setRefDate(d.refDate ?? '')
+    setNextAppointment(d.nextAppointment ?? ''); setNotes(d.notes ?? '')
+  }
+
+  // On mount: look for an existing draft for THIS patient. If found, hold it
+  // and show the restore banner rather than auto-filling silently.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        setDraftData(parsed.data ?? null)
+        setDraftSavedAt(parsed.savedAt ?? '')
+        setDraftFound(true)
+      } else {
+        // No draft — allow autosave to start immediately.
+        setRestored(true)
+      }
+    } catch {
+      setRestored(true)
+    }
+    hydratedRef.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Autosave: after the draft check has run AND the user has dealt with any
+  // existing draft, save form changes to localStorage ~1s after they stop.
+  useEffect(() => {
+    if (!hydratedRef.current || !restored) return
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      try {
+        const payload = { data: collectFormData(), savedAt: new Date().toISOString() }
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
+        setLastSaved(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
+      } catch {
+        // Storage full or unavailable — fail quietly; the form still works.
+      }
+    }, 1000)
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    restored, reasonForVisit, symptoms, lastEyeExam, medicalHistory, age, bp,
+    hasPrx, sphPrxOD, cylPrxOD, axisPrxOD, addPrxOD, sphPrxOS, cylPrxOS, axisPrxOS, addPrxOS,
+    vaType, vaChart, vaFarOD, vaFarODAdd, vaFarOS, vaFarOSAdd, vaNearOD, vaNearOS,
+    vaPinholeOD, vaPinholeODAdd, vaPinholeOS, vaPinholeOSAdd,
+    pxVaFarOD, pxVaFarODAdd, pxVaFarOS, pxVaFarOSAdd, pxVaNearOD, pxVaNearOS,
+    sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
+    iopOD, iopOS, anteriorOD, anteriorOS,
+    discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
+    sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
+    retVaFarOD, retVaFarODAdd, retVaFarOS, retVaFarOSAdd, retVaNearOD, retVaNearOS,
+    sphSubOD, cylSubOD, axisSubOD, addSubOD, sphSubOS, cylSubOS, axisSubOS, addSubOS,
+    sphFinalOD, cylFinalOD, axisFinalOD, addFinalOD, sphFinalOS, cylFinalOS, axisFinalOS, addFinalOS,
+    finalVaFarOD, finalVaFarODAdd, finalVaFarOS, finalVaFarOSAdd, finalVaNearOD, finalVaNearOS,
+    diagnosis, drugs, hasReferral, referralFor, refDate, nextAppointment, notes,
+  ])
+
+  function handleRestoreDraft() {
+    applyDraft(draftData)
+    setDraftFound(false)
+    setRestored(true)
+  }
+
+  function handleDiscardDraft() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    setDraftData(null)
+    setDraftFound(false)
+    setRestored(true)
+  }
+
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+  }
+
   function addDrug() {
     setDrugs(prev => [...prev, { type: '', name: '', freq: '' }])
   }
@@ -335,12 +485,49 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
+
+    // Visit saved to the database — the draft is no longer needed, so clear it
+    // to avoid a stale draft reappearing next time this patient is opened.
+    clearDraft()
+
     router.push(`/dashboard/patients/${patientId}`)
     router.refresh()
   }
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 text-sm">
+
+      {/* Restore-draft banner — shown only when an unsaved draft was found */}
+      {draftFound && (
+        <div className="rounded-lg border border-brand/30 bg-brand/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-gray-800">Unsaved draft found</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              You have an unsaved visit for this patient
+              {draftSavedAt ? ` from ${new Date(draftSavedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}.
+              Restore it, or discard and start fresh.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={handleRestoreDraft} className="rounded bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover transition-colors">
+              Restore draft
+            </button>
+            <button type="button" onClick={handleDiscardDraft} className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Saved indicator — appears once autosave has written a draft */}
+      {restored && lastSaved && (
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <svg className="w-3.5 h-3.5 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          Draft saved on this device at {lastSaved}
+        </div>
+      )}
 
       <SectionHeader title="Presenting Complaint" />
       <div className="grid grid-cols-2 gap-4">
@@ -362,7 +549,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       </div>
       <div className="flex flex-col gap-3">
         <EyeRow label="Sphere" odContent={<OD value={sphPrxOD} onChange={setSphPrxOD} />} osContent={<OS value={sphPrxOS} onChange={setSphPrxOS} />} />
-        <EyeRow label="Cylinder" odContent={<OD value={cylPrxOD} onChange={setCylPrxOD} />} osContent={<OS value={cylPrxOS} onChange={setSphPrxOS} />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylPrxOD} onChange={setCylPrxOD} />} osContent={<OS value={cylPrxOS} onChange={setCylPrxOS} />} />
         <EyeRow label="Axis" odContent={<SuffixInput value={axisPrxOD} onChange={setAxisPrxOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisPrxOS} onChange={setAxisPrxOS} suffix="°" colorClass={OS_CLASS} />} />
         <EyeRow label="Add" odContent={<OD value={addPrxOD} onChange={setAddPrxOD} />} osContent={<OS value={addPrxOS} onChange={setAddPrxOS} />} />
       </div>

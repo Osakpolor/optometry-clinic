@@ -270,6 +270,8 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
     setSaving(true)
     setErrorMsg('')
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     const medsList = drugs.filter(d => d.name || d.type).map(d => ({
       type: d.type || null, name: d.name || null, freq: d.freq || null
     }))
@@ -324,6 +326,7 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       ref_date: refDate || null,
       follow_up_date: nextAppointment || null,
       notes: notes || null,
+      updated_by: user?.id ?? null,
       updated_at: new Date().toISOString(),
     }).eq('id', visitId)
 

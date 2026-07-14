@@ -321,11 +321,14 @@ export default async function DashboardPage() {
                 <div className="max-h-96 overflow-y-auto -mx-5 px-5">
                   <ul className="divide-y divide-border">
                     {followUps.map((f: any) => {
-                      const apptDate = new Date(f.follow_up_date)
-                      const isToday = f.follow_up_date === followUpCutoff.toISOString().slice(0, 10)
-                      const tomorrow2 = new Date(followUpCutoff)
-                      tomorrow2.setDate(tomorrow2.getDate() + 1)
-                      const isTomorrow = f.follow_up_date === tomorrow2.toISOString().slice(0, 10)
+                      const apptDate = new Date(f.follow_up_date + 'T12:00:00')
+                      const todayStr = today.toLocaleDateString('en-CA')
+                      const tomorrowDate = new Date(today)
+                      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+                      const tomorrowStr = tomorrowDate.toLocaleDateString('en-CA')
+
+                      const isToday = f.follow_up_date === todayStr
+                      const isTomorrow = f.follow_up_date === tomorrowStr
 
                       const dateLabel2 = isToday
                         ? 'Today'

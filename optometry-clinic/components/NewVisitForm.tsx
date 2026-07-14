@@ -486,6 +486,22 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
 
+    // If the doctor set a follow-up date, automatically create a booked
+    // appointment so it appears on the appointments page without any
+    // extra manual step from the receptionist.
+    if (nextAppointment) {
+      await supabase.from('appointments').insert({
+        patient_id: patientId,
+        appointment_date: `${nextAppointment}T09:00:00`,
+        service_type: 'Routine eye exam',
+        status: 'booked',
+      })
+      // We intentionally don't block on this error — the visit record
+      // was already saved successfully. A duplicate appointment (if the
+      // doctor saves twice) will just be a no-op once the unique
+      // constraint is in place.
+    }
+
     // Visit saved to the database — the draft is no longer needed, so clear it
     // to avoid a stale draft reappearing next time this patient is opened.
     clearDraft()

@@ -332,6 +332,23 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
 
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
+
+    // If a follow-up date is set, upsert an appointment so the
+    // appointments page stays in sync. Upsert on patient_id +
+    // appointment_date avoids duplicates if the doctor edits the
+    // visit without changing the follow-up date.
+    if (nextAppointment) {
+      await supabase.from('appointments').upsert({
+        patient_id: patientId,
+        appointment_date: `${nextAppointment}T09:00:00`,
+        service_type: 'Routine eye exam',
+        status: 'booked',
+      }, {
+        onConflict: 'patient_id,appointment_date',
+        ignoreDuplicates: true,
+      })
+    }
+
     router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
     router.refresh()
   }

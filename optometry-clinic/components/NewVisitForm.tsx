@@ -13,7 +13,7 @@ const DISC_TYPES = ['', 'Type I', 'Type II', 'Type III', 'Type IV', 'Type V']
 type Drug = { type: string; name: string; freq: string }
 
 function SectionHeader({ title }: { title: string }) {
-  return <h3 className="mt-6 border-b border-gray-200 pb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+  return <h3 className="mt-6 border-b border-gray-200 pb-1 text-sm sm:text-base font-semibold uppercase tracking-wide text-gray-700">{title}</h3>
 }
 
 function TextInput({ label, value, onChange, textarea }: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean }) {
@@ -39,7 +39,7 @@ function YellowTextarea({ label, value, onChange, rows = 4 }: { label?: string; 
 function SuffixInput({ label, value, onChange, suffix, colorClass }: { label?: string; value: string; onChange: (v: string) => void; suffix: string; colorClass: string }) {
   return (
     <label className="flex flex-col gap-1">
-      {label && <span className="text-xs text-gray-500">{label}</span>}
+      {label && <span className="text-xs sm:text-sm text-gray-600">{label}</span>}
       <div className={`flex items-center rounded border text-sm overflow-hidden ${colorClass}`}>
         <input value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-transparent p-1.5 outline-none w-0 min-w-0" />
         {value && <span className="pr-1.5 text-xs text-gray-400 select-none whitespace-nowrap">{suffix}</span>}
@@ -114,7 +114,7 @@ function Sel({ label, value, onChange, options }: { label?: string; value: strin
 function EyeRow({ label, odContent, osContent }: { label: string; odContent: ReactNode; osContent: ReactNode }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-2 items-end">
-      <span className="text-xs text-gray-500 self-center col-span-2 sm:col-span-1">{label}</span>
+      <span className="text-xs sm:text-sm font-medium text-gray-700 self-center col-span-2 sm:col-span-1">{label}</span>
       <div className="sm:col-span-2">{odContent}</div>
       <div className="sm:col-span-2">{osContent}</div>
     </div>
@@ -560,7 +560,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <Sel label="Chart used" value={vaChart} onChange={setVaChart} options={CHARTS} />
       </div>
 
-      <p className="text-xs font-semibold uppercase text-gray-400 mt-2">Without Correction</p>
+      <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">Without Correction</p>
       <EyeColHeaders />
       <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
@@ -569,7 +569,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <EyeRow label="Pin Hole" odContent={<FractionInput value={vaPinholeOD} onChange={setVaPinholeOD} addValue={vaPinholeODAdd} onAddChange={setVaPinholeODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaPinholeOS} onChange={setVaPinholeOS} addValue={vaPinholeOSAdd} onAddChange={setVaPinholeOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
-      <p className="text-xs font-semibold uppercase text-gray-400 mt-2">With Correction</p>
+      <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">With Correction</p>
       <EyeColHeaders />
       <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
@@ -644,7 +644,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <EyeRow label="Cylinder" odContent={<OD value={cylRetOD} onChange={setCylRetOD} />} osContent={<OS value={cylRetOS} onChange={setCylRetOS} />} />
         <EyeRow label="Axis" odContent={<SuffixInput value={axisRetOD} onChange={setAxisRetOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisRetOS} onChange={setAxisRetOS} suffix="°" colorClass={OS_CLASS} />} />
       </div>
-      <p className="text-xs font-semibold uppercase text-gray-400 mt-2">V.A after Retinoscopy</p>
+      <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">V.A after Retinoscopy</p>
       <EyeColHeaders />
       <div className="flex flex-col gap-3">
         <EyeRow label="@Far" odContent={<FractionInput value={retVaFarOD} onChange={setRetVaFarOD} addValue={retVaFarODAdd} onAddChange={setRetVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={retVaFarOS} onChange={setRetVaFarOS} addValue={retVaFarOSAdd} onAddChange={setRetVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
@@ -670,7 +670,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <EyeRow label="Axis" odContent={<SuffixInput value={axisFinalOD} onChange={setAxisFinalOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisFinalOS} onChange={setAxisFinalOS} suffix="°" colorClass={OS_CLASS} />} />
         <EyeRow label="Add" odContent={<OD value={addFinalOD} onChange={setAddFinalOD} />} osContent={<OS value={addFinalOS} onChange={setAddFinalOS} />} />
       </div>
-      <p className="text-xs font-semibold uppercase text-gray-400 mt-2">V.A after Final Prescription</p>
+      <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">V.A after Final Prescription</p>
       <EyeColHeaders />
       <div className="flex flex-col gap-3">
         <EyeRow label="@Far" odContent={<FractionInput value={finalVaFarOD} onChange={setFinalVaFarOD} addValue={finalVaFarODAdd} onAddChange={setFinalVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={finalVaFarOS} onChange={setFinalVaFarOS} addValue={finalVaFarOSAdd} onAddChange={setFinalVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />

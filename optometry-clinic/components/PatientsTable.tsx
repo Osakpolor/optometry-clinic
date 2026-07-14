@@ -29,9 +29,6 @@ function compareRefs(a: string, b: string): number {
   return a.localeCompare(b)
 }
 
-// Debounce hook — delays updating the value until the user
-// stops typing for `delay` ms, keeping search responsive on
-// large patient lists.
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -45,7 +42,9 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('file_number')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  // Default to descending so the highest (most recent) file number
+  // appears first — newest patients at the top of the list.
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const debouncedSearch = useDebounce(search, 200)
 
@@ -64,8 +63,6 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
     return patients
       .filter(p =>
         !q ||
-        // Search by name or file number only — phone intentionally
-        // excluded per clinic preference.
         p.full_name?.toLowerCase().includes(q) ||
         (p.file_number ?? '').toLowerCase().includes(q) ||
         String(p.legacy_id ?? '').includes(q)

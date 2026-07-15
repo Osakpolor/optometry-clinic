@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import VisitDocuments from '@/components/visits/VisitDocuments'
 import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
+import { DeleteVisitButton } from '@/components/visits/DeleteVisitButton'
+import { getUserRole } from '@/lib/auth/roles'
 
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
@@ -143,7 +145,6 @@ function AnteriorSection({ ant }: { ant: Record<string, any> }) {
       </Section>
     )
   }
-  // For new structured visits, show notes_od / notes_os free text
   if (!ant.notes_od && !ant.notes_os) return null
   return (
     <Section title="External exam (anterior segment)">
@@ -209,6 +210,11 @@ export default async function VisitDetailPage({
   const { id, visitId } = await params
   const supabase = await createClient()
 
+  // Get role server-side — delete button visibility decided here,
+  // not in the client, so the role can't be spoofed.
+  const userRole = await getUserRole()
+  const isAdmin = userRole === 'admin'
+
   const { data: visit, error } = await supabase
     .from('visit_records')
     .select(`
@@ -245,8 +251,12 @@ export default async function VisitDetailPage({
   const post: Record<string, any> = visit.posterior_segment ?? {}
   const meds: any[] = visit.medications ?? []
 
-  // File number — consistent H3 teal style across all pages
   const fileNumber = patient?.file_number ?? patient?.legacy_id?.toString() ?? null
+
+  // Formatted visit date string passed to the delete confirmation dialog
+  const visitDateLabel = new Date(visit.visit_date).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
 
   return (
     <main className="w-full py-2">
@@ -260,18 +270,13 @@ export default async function VisitDetailPage({
       {/* Visit header */}
       <div className="mt-4 flex items-start justify-between">
         <div>
-          {/* File number — teal H3, consistent with patient detail and visit form pages */}
           {fileNumber && (
             <h3 className="text-lg font-semibold text-brand mb-1">
               File #{fileNumber}
             </h3>
           )}
           <h1 className="text-3xl font-semibold tracking-tight">
-            {new Date(visit.visit_date).toLocaleDateString('en-GB', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            })}
+            {visitDateLabel}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">
@@ -286,7 +291,9 @@ export default async function VisitDetailPage({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Action buttons — Delete shown to admins only */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <ExportPrescriptionPDF
             patient={{
               full_name: patient?.full_name ?? 'Patient',
@@ -299,6 +306,14 @@ export default async function VisitDetailPage({
               Edit visit
             </Button>
           </Link>
+          {isAdmin && (
+            <DeleteVisitButton
+              visitId={visitId}
+              patientId={id}
+              patientName={patient?.full_name ?? 'this patient'}
+              visitDate={visitDateLabel}
+            />
+          )}
         </div>
       </div>
 

@@ -10,7 +10,8 @@ const DRUG_TYPES = ['', 'Tab', 'Cap', 'Gutt', 'Oc']
 const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte']
 const DISC_TYPES = ['', 'Type I', 'Type II', 'Type III', 'Type IV', 'Type V']
 
-type Drug = { type: string; name: string; freq: string }
+// Qty and Duration are free text — doctor types e.g. "30" and "5 days"
+type Drug = { type: string; name: string; qty: string; freq: string; duration: string }
 
 function SectionHeader({ title }: { title: string }) {
   return <h3 className="mt-6 border-b border-gray-200 pb-1 text-sm sm:text-base font-semibold uppercase tracking-wide text-gray-700">{title}</h3>
@@ -48,20 +49,17 @@ function SuffixInput({ label, value, onChange, suffix, colorClass }: { label?: s
   )
 }
 
-function FractionInput({ label, value, onChange, addValue, onAddChange, colorClass }: { label?: string; value: string; onChange: (v: string) => void; addValue: string; onAddChange: (v: string) => void; colorClass: string }) {
+// Plain single input — no 6/ prefix, no add box
+function FractionInput({ label, value, onChange, colorClass }: { label?: string; value: string; onChange: (v: string) => void; colorClass: string }) {
   const isOD = colorClass.includes('pink')
   return (
     <div className="flex flex-col gap-1">
       {label && <span className={`text-xs font-medium sm:hidden ${isOD ? 'text-pink-400' : 'text-green-500'}`}>{label}</span>}
-      <div className="flex items-center gap-1">
-        <div className={`flex items-center rounded border text-sm overflow-hidden ${colorClass} flex-1`}>
-          <span className="pl-1.5 text-xs text-gray-400 select-none">6/</span>
-          <input value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-transparent p-1.5 outline-none w-0 min-w-0" />
-        </div>
-        <div className={`flex items-center rounded border text-sm overflow-hidden ${colorClass} w-12`}>
-          <input value={addValue} onChange={e => onAddChange(e.target.value)} className="flex-1 bg-transparent p-1.5 outline-none w-0 min-w-0" placeholder="add" />
-        </div>
-      </div>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`rounded border p-1.5 text-sm w-full bg-transparent ${colorClass}`}
+      />
     </div>
   )
 }
@@ -103,7 +101,7 @@ function OS({ label, value, onChange }: { label?: string; value: string; onChang
 function Sel({ label, value, onChange, options }: { label?: string; value: string; onChange: (v: string) => void; options: string[] }) {
   return (
     <label className="flex flex-col gap-1">
-      {label && <span className="text-xs font-medium text-gray-600">{label}</span>}
+      {label && <span className="text-xs sm:text-sm font-medium text-gray-600">{label}</span>}
       <select value={value} onChange={e => onChange(e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm">
         {options.map(o => <option key={o} value={o}>{o || '—'}</option>)}
       </select>
@@ -144,10 +142,8 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const router = useRouter()
   const supabase = createClient()
 
-  // Draft key is unique per patient so drafts never bleed across patients.
   const DRAFT_KEY = `visit-draft:${patientId}`
 
-  // Presenting complaint
   const [reasonForVisit, setReasonForVisit] = useState('')
   const [symptoms, setSymptoms] = useState('')
   const [lastEyeExam, setLastEyeExam] = useState('')
@@ -155,7 +151,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [age, setAge] = useState('')
   const [bp, setBp] = useState('')
 
-  // Prescription
   const [hasPrx, setHasPrx] = useState('No')
   const [sphPrxOD, setSphPrxOD] = useState('')
   const [cylPrxOD, setCylPrxOD] = useState('')
@@ -166,27 +161,19 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [axisPrxOS, setAxisPrxOS] = useState('')
   const [addPrxOS, setAddPrxOS] = useState('')
 
-  // Visual acuity
   const [vaType, setVaType] = useState('Analog')
   const [vaChart, setVaChart] = useState('Snellen')
   const [vaFarOD, setVaFarOD] = useState('')
-  const [vaFarODAdd, setVaFarODAdd] = useState('')
   const [vaFarOS, setVaFarOS] = useState('')
-  const [vaFarOSAdd, setVaFarOSAdd] = useState('')
   const [vaNearOD, setVaNearOD] = useState('')
   const [vaNearOS, setVaNearOS] = useState('')
   const [vaPinholeOD, setVaPinholeOD] = useState('')
-  const [vaPinholeODAdd, setVaPinholeODAdd] = useState('')
   const [vaPinholeOS, setVaPinholeOS] = useState('')
-  const [vaPinholeOSAdd, setVaPinholeOSAdd] = useState('')
   const [pxVaFarOD, setPxVaFarOD] = useState('')
-  const [pxVaFarODAdd, setPxVaFarODAdd] = useState('')
   const [pxVaFarOS, setPxVaFarOS] = useState('')
-  const [pxVaFarOSAdd, setPxVaFarOSAdd] = useState('')
   const [pxVaNearOD, setPxVaNearOD] = useState('')
   const [pxVaNearOS, setPxVaNearOS] = useState('')
 
-  // Auto-refraction
   const [sphAutoOD, setSphAutoOD] = useState('')
   const [cylAutoOD, setCylAutoOD] = useState('')
   const [axisAutoOD, setAxisAutoOD] = useState('')
@@ -194,15 +181,13 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [cylAutoOS, setCylAutoOS] = useState('')
   const [axisAutoOS, setAxisAutoOS] = useState('')
 
-  // IOP
   const [iopOD, setIopOD] = useState('')
   const [iopOS, setIopOS] = useState('')
 
-  // External exam — free text
-  const [anteriorOD, setAnteriorOD] = useState('')
-  const [anteriorOS, setAnteriorOS] = useState('')
+  // Default to NAD — "No Abnormality Detected" is the standard clinical default
+  const [anteriorOD, setAnteriorOD] = useState('NAD')
+  const [anteriorOS, setAnteriorOS] = useState('NAD')
 
-  // Ophthalmoscopy
   const [discOD, setDiscOD] = useState('')
   const [discOS, setDiscOS] = useState('')
   const [cupOD, setCupOD] = useState('')
@@ -210,7 +195,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [posteriorOD, setPosteriorOD] = useState('')
   const [posteriorOS, setPosteriorOS] = useState('')
 
-  // Retinoscopy
   const [sphRetOD, setSphRetOD] = useState('')
   const [cylRetOD, setCylRetOD] = useState('')
   const [axisRetOD, setAxisRetOD] = useState('')
@@ -218,13 +202,8 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [cylRetOS, setCylRetOS] = useState('')
   const [axisRetOS, setAxisRetOS] = useState('')
   const [retVaFarOD, setRetVaFarOD] = useState('')
-  const [retVaFarODAdd, setRetVaFarODAdd] = useState('')
   const [retVaFarOS, setRetVaFarOS] = useState('')
-  const [retVaFarOSAdd, setRetVaFarOSAdd] = useState('')
-  const [retVaNearOD, setRetVaNearOD] = useState('')
-  const [retVaNearOS, setRetVaNearOS] = useState('')
 
-  // Subjective refraction
   const [sphSubOD, setSphSubOD] = useState('')
   const [cylSubOD, setCylSubOD] = useState('')
   const [axisSubOD, setAxisSubOD] = useState('')
@@ -234,7 +213,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [axisSubOS, setAxisSubOS] = useState('')
   const [addSubOS, setAddSubOS] = useState('')
 
-  // Final prescription
   const [sphFinalOD, setSphFinalOD] = useState('')
   const [cylFinalOD, setCylFinalOD] = useState('')
   const [axisFinalOD, setAxisFinalOD] = useState('')
@@ -244,15 +222,13 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [axisFinalOS, setAxisFinalOS] = useState('')
   const [addFinalOS, setAddFinalOS] = useState('')
   const [finalVaFarOD, setFinalVaFarOD] = useState('')
-  const [finalVaFarODAdd, setFinalVaFarODAdd] = useState('')
   const [finalVaFarOS, setFinalVaFarOS] = useState('')
-  const [finalVaFarOSAdd, setFinalVaFarOSAdd] = useState('')
   const [finalVaNearOD, setFinalVaNearOD] = useState('')
   const [finalVaNearOS, setFinalVaNearOS] = useState('')
 
-  // Diagnosis & management
   const [diagnosis, setDiagnosis] = useState('')
-  const [drugs, setDrugs] = useState<Drug[]>([{ type: '', name: '', freq: '' }])
+  // Drug type now includes qty and duration
+  const [drugs, setDrugs] = useState<Drug[]>([{ type: '', name: '', qty: '', freq: '', duration: '' }])
   const [hasReferral, setHasReferral] = useState('No')
   const [referralFor, setReferralFor] = useState('')
   const [refDate, setRefDate] = useState('')
@@ -261,44 +237,34 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // ── Autosave state ──
-  // draftFound: a saved draft was detected on mount (show restore banner)
-  // draftData:  the parsed draft, held until the user chooses restore/discard
-  // lastSaved:  timestamp label shown in the "saved" indicator
-  // restored:   becomes true once we've either restored or discarded, so the
-  //             restore banner disappears and autosave can begin writing.
   const [draftFound, setDraftFound] = useState(false)
   const [draftData, setDraftData] = useState<any>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<string>('')
   const [lastSaved, setLastSaved] = useState<string>('')
   const [restored, setRestored] = useState(false)
 
-  // Guards so we don't autosave before the mount-time draft check has run.
   const hydratedRef = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Collect every field into one serialisable object. Anything added to the
-  // form later should be added here too so it's covered by autosave.
   function collectFormData() {
     return {
       reasonForVisit, symptoms, lastEyeExam, medicalHistory, age, bp,
       hasPrx, sphPrxOD, cylPrxOD, axisPrxOD, addPrxOD, sphPrxOS, cylPrxOS, axisPrxOS, addPrxOS,
-      vaType, vaChart, vaFarOD, vaFarODAdd, vaFarOS, vaFarOSAdd, vaNearOD, vaNearOS,
-      vaPinholeOD, vaPinholeODAdd, vaPinholeOS, vaPinholeOSAdd,
-      pxVaFarOD, pxVaFarODAdd, pxVaFarOS, pxVaFarOSAdd, pxVaNearOD, pxVaNearOS,
+      vaType, vaChart, vaFarOD, vaFarOS, vaNearOD, vaNearOS,
+      vaPinholeOD, vaPinholeOS,
+      pxVaFarOD, pxVaFarOS, pxVaNearOD, pxVaNearOS,
       sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
       iopOD, iopOS, anteriorOD, anteriorOS,
       discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
       sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
-      retVaFarOD, retVaFarODAdd, retVaFarOS, retVaFarOSAdd, retVaNearOD, retVaNearOS,
+      retVaFarOD, retVaFarOS,
       sphSubOD, cylSubOD, axisSubOD, addSubOD, sphSubOS, cylSubOS, axisSubOS, addSubOS,
       sphFinalOD, cylFinalOD, axisFinalOD, addFinalOD, sphFinalOS, cylFinalOS, axisFinalOS, addFinalOS,
-      finalVaFarOD, finalVaFarODAdd, finalVaFarOS, finalVaFarOSAdd, finalVaNearOD, finalVaNearOS,
+      finalVaFarOD, finalVaFarOS, finalVaNearOD, finalVaNearOS,
       diagnosis, drugs, hasReferral, referralFor, refDate, nextAppointment, notes,
     }
   }
 
-  // Apply a parsed draft object back into all the form fields.
   function applyDraft(d: any) {
     if (!d) return
     setReasonForVisit(d.reasonForVisit ?? ''); setSymptoms(d.symptoms ?? '')
@@ -308,35 +274,32 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     setSphPrxOD(d.sphPrxOD ?? ''); setCylPrxOD(d.cylPrxOD ?? ''); setAxisPrxOD(d.axisPrxOD ?? ''); setAddPrxOD(d.addPrxOD ?? '')
     setSphPrxOS(d.sphPrxOS ?? ''); setCylPrxOS(d.cylPrxOS ?? ''); setAxisPrxOS(d.axisPrxOS ?? ''); setAddPrxOS(d.addPrxOS ?? '')
     setVaType(d.vaType ?? 'Analog'); setVaChart(d.vaChart ?? 'Snellen')
-    setVaFarOD(d.vaFarOD ?? ''); setVaFarODAdd(d.vaFarODAdd ?? ''); setVaFarOS(d.vaFarOS ?? ''); setVaFarOSAdd(d.vaFarOSAdd ?? '')
+    setVaFarOD(d.vaFarOD ?? ''); setVaFarOS(d.vaFarOS ?? '')
     setVaNearOD(d.vaNearOD ?? ''); setVaNearOS(d.vaNearOS ?? '')
-    setVaPinholeOD(d.vaPinholeOD ?? ''); setVaPinholeODAdd(d.vaPinholeODAdd ?? ''); setVaPinholeOS(d.vaPinholeOS ?? ''); setVaPinholeOSAdd(d.vaPinholeOSAdd ?? '')
-    setPxVaFarOD(d.pxVaFarOD ?? ''); setPxVaFarODAdd(d.pxVaFarODAdd ?? ''); setPxVaFarOS(d.pxVaFarOS ?? ''); setPxVaFarOSAdd(d.pxVaFarOSAdd ?? '')
+    setVaPinholeOD(d.vaPinholeOD ?? ''); setVaPinholeOS(d.vaPinholeOS ?? '')
+    setPxVaFarOD(d.pxVaFarOD ?? ''); setPxVaFarOS(d.pxVaFarOS ?? '')
     setPxVaNearOD(d.pxVaNearOD ?? ''); setPxVaNearOS(d.pxVaNearOS ?? '')
     setSphAutoOD(d.sphAutoOD ?? ''); setCylAutoOD(d.cylAutoOD ?? ''); setAxisAutoOD(d.axisAutoOD ?? '')
     setSphAutoOS(d.sphAutoOS ?? ''); setCylAutoOS(d.cylAutoOS ?? ''); setAxisAutoOS(d.axisAutoOS ?? '')
     setIopOD(d.iopOD ?? ''); setIopOS(d.iopOS ?? '')
-    setAnteriorOD(d.anteriorOD ?? ''); setAnteriorOS(d.anteriorOS ?? '')
+    setAnteriorOD(d.anteriorOD ?? 'NAD'); setAnteriorOS(d.anteriorOS ?? 'NAD')
     setDiscOD(d.discOD ?? ''); setDiscOS(d.discOS ?? ''); setCupOD(d.cupOD ?? ''); setCupOS(d.cupOS ?? '')
     setPosteriorOD(d.posteriorOD ?? ''); setPosteriorOS(d.posteriorOS ?? '')
     setSphRetOD(d.sphRetOD ?? ''); setCylRetOD(d.cylRetOD ?? ''); setAxisRetOD(d.axisRetOD ?? '')
     setSphRetOS(d.sphRetOS ?? ''); setCylRetOS(d.cylRetOS ?? ''); setAxisRetOS(d.axisRetOS ?? '')
-    setRetVaFarOD(d.retVaFarOD ?? ''); setRetVaFarODAdd(d.retVaFarODAdd ?? ''); setRetVaFarOS(d.retVaFarOS ?? ''); setRetVaFarOSAdd(d.retVaFarOSAdd ?? '')
-    setRetVaNearOD(d.retVaNearOD ?? ''); setRetVaNearOS(d.retVaNearOS ?? '')
+    setRetVaFarOD(d.retVaFarOD ?? ''); setRetVaFarOS(d.retVaFarOS ?? '')
     setSphSubOD(d.sphSubOD ?? ''); setCylSubOD(d.cylSubOD ?? ''); setAxisSubOD(d.axisSubOD ?? ''); setAddSubOD(d.addSubOD ?? '')
     setSphSubOS(d.sphSubOS ?? ''); setCylSubOS(d.cylSubOS ?? ''); setAxisSubOS(d.axisSubOS ?? ''); setAddSubOS(d.addSubOS ?? '')
     setSphFinalOD(d.sphFinalOD ?? ''); setCylFinalOD(d.cylFinalOD ?? ''); setAxisFinalOD(d.axisFinalOD ?? ''); setAddFinalOD(d.addFinalOD ?? '')
     setSphFinalOS(d.sphFinalOS ?? ''); setCylFinalOS(d.cylFinalOS ?? ''); setAxisFinalOS(d.axisFinalOS ?? ''); setAddFinalOS(d.addFinalOS ?? '')
-    setFinalVaFarOD(d.finalVaFarOD ?? ''); setFinalVaFarODAdd(d.finalVaFarODAdd ?? ''); setFinalVaFarOS(d.finalVaFarOS ?? ''); setFinalVaFarOSAdd(d.finalVaFarOSAdd ?? '')
+    setFinalVaFarOD(d.finalVaFarOD ?? ''); setFinalVaFarOS(d.finalVaFarOS ?? '')
     setFinalVaNearOD(d.finalVaNearOD ?? ''); setFinalVaNearOS(d.finalVaNearOS ?? '')
     setDiagnosis(d.diagnosis ?? '')
-    setDrugs(Array.isArray(d.drugs) && d.drugs.length > 0 ? d.drugs : [{ type: '', name: '', freq: '' }])
+    setDrugs(Array.isArray(d.drugs) && d.drugs.length > 0 ? d.drugs : [{ type: '', name: '', qty: '', freq: '', duration: '' }])
     setHasReferral(d.hasReferral ?? 'No'); setReferralFor(d.referralFor ?? ''); setRefDate(d.refDate ?? '')
     setNextAppointment(d.nextAppointment ?? ''); setNotes(d.notes ?? '')
   }
 
-  // On mount: look for an existing draft for THIS patient. If found, hold it
-  // and show the restore banner rather than auto-filling silently.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(DRAFT_KEY)
@@ -346,7 +309,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         setDraftSavedAt(parsed.savedAt ?? '')
         setDraftFound(true)
       } else {
-        // No draft — allow autosave to start immediately.
         setRestored(true)
       }
     } catch {
@@ -356,69 +318,46 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Autosave: after the draft check has run AND the user has dealt with any
-  // existing draft, save form changes to localStorage ~1s after they stop.
   useEffect(() => {
     if (!hydratedRef.current || !restored) return
-
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       try {
         const payload = { data: collectFormData(), savedAt: new Date().toISOString() }
         localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
         setLastSaved(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))
-      } catch {
-        // Storage full or unavailable — fail quietly; the form still works.
-      }
+      } catch {}
     }, 1000)
-
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     restored, reasonForVisit, symptoms, lastEyeExam, medicalHistory, age, bp,
     hasPrx, sphPrxOD, cylPrxOD, axisPrxOD, addPrxOD, sphPrxOS, cylPrxOS, axisPrxOS, addPrxOS,
-    vaType, vaChart, vaFarOD, vaFarODAdd, vaFarOS, vaFarOSAdd, vaNearOD, vaNearOS,
-    vaPinholeOD, vaPinholeODAdd, vaPinholeOS, vaPinholeOSAdd,
-    pxVaFarOD, pxVaFarODAdd, pxVaFarOS, pxVaFarOSAdd, pxVaNearOD, pxVaNearOS,
+    vaType, vaChart, vaFarOD, vaFarOS, vaNearOD, vaNearOS,
+    vaPinholeOD, vaPinholeOS, pxVaFarOD, pxVaFarOS, pxVaNearOD, pxVaNearOS,
     sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
     iopOD, iopOS, anteriorOD, anteriorOS,
     discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
     sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
-    retVaFarOD, retVaFarODAdd, retVaFarOS, retVaFarOSAdd, retVaNearOD, retVaNearOS,
+    retVaFarOD, retVaFarOS,
     sphSubOD, cylSubOD, axisSubOD, addSubOD, sphSubOS, cylSubOS, axisSubOS, addSubOS,
     sphFinalOD, cylFinalOD, axisFinalOD, addFinalOD, sphFinalOS, cylFinalOS, axisFinalOS, addFinalOS,
-    finalVaFarOD, finalVaFarODAdd, finalVaFarOS, finalVaFarOSAdd, finalVaNearOD, finalVaNearOS,
+    finalVaFarOD, finalVaFarOS, finalVaNearOD, finalVaNearOS,
     diagnosis, drugs, hasReferral, referralFor, refDate, nextAppointment, notes,
   ])
 
-  function handleRestoreDraft() {
-    applyDraft(draftData)
-    setDraftFound(false)
-    setRestored(true)
-  }
-
+  function handleRestoreDraft() { applyDraft(draftData); setDraftFound(false); setRestored(true) }
   function handleDiscardDraft() {
     try { localStorage.removeItem(DRAFT_KEY) } catch {}
-    setDraftData(null)
-    setDraftFound(false)
-    setRestored(true)
+    setDraftData(null); setDraftFound(false); setRestored(true)
   }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY) } catch {} }
 
-  function clearDraft() {
-    try { localStorage.removeItem(DRAFT_KEY) } catch {}
-  }
-
-  function addDrug() {
-    setDrugs(prev => [...prev, { type: '', name: '', freq: '' }])
-  }
-
+  function addDrug() { setDrugs(prev => [...prev, { type: '', name: '', qty: '', freq: '', duration: '' }]) }
   function updateDrug(i: number, field: keyof Drug, val: string) {
     setDrugs(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d))
   }
-
-  function removeDrug(i: number) {
-    setDrugs(prev => prev.filter((_, idx) => idx !== i))
-  }
+  function removeDrug(i: number) { setDrugs(prev => prev.filter((_, idx) => idx !== i)) }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -426,7 +365,11 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     setErrorMsg('')
 
     const meds = drugs.filter(d => d.name || d.type).map(d => ({
-      type: d.type || null, name: d.name || null, freq: d.freq || null
+      type: d.type || null,
+      name: d.name || null,
+      qty: d.qty || null,
+      freq: d.freq || null,
+      duration: d.duration || null,
     }))
 
     const { error } = await supabase.from('visit_records').insert({
@@ -440,21 +383,24 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       bp: bp || null,
       eye_test_results: {
         va_type: vaType, va_chart: vaChart,
-        va_far_od: vaFarOD ? `6/${vaFarOD}` : null, va_far_od_add: vaFarODAdd || null,
-        va_far_os: vaFarOS ? `6/${vaFarOS}` : null, va_far_os_add: vaFarOSAdd || null,
-        va_near_od: vaNearOD ? `N${vaNearOD}` : null, va_near_os: vaNearOS ? `N${vaNearOS}` : null,
-        va_pinhole_od: vaPinholeOD ? `6/${vaPinholeOD}` : null, va_pinhole_od_add: vaPinholeODAdd || null,
-        va_pinhole_os: vaPinholeOS ? `6/${vaPinholeOS}` : null, va_pinhole_os_add: vaPinholeOSAdd || null,
-        px_va_far_od: pxVaFarOD ? `6/${pxVaFarOD}` : null, px_va_far_od_add: pxVaFarODAdd || null,
-        px_va_far_os: pxVaFarOS ? `6/${pxVaFarOS}` : null, px_va_far_os_add: pxVaFarOSAdd || null,
-        px_va_near_od: pxVaNearOD ? `N${pxVaNearOD}` : null, px_va_near_os: pxVaNearOS ? `N${pxVaNearOS}` : null,
-        iop_od: iopOD ? `${iopOD}mmHg` : null, iop_os: iopOS ? `${iopOS}mmHg` : null,
-        ret_va_far_od: retVaFarOD ? `6/${retVaFarOD}` : null, ret_va_far_od_add: retVaFarODAdd || null,
-        ret_va_far_os: retVaFarOS ? `6/${retVaFarOS}` : null, ret_va_far_os_add: retVaFarOSAdd || null,
-        ret_va_near_od: retVaNearOD ? `N${retVaNearOD}` : null, ret_va_near_os: retVaNearOS ? `N${retVaNearOS}` : null,
-        final_va_far_od: finalVaFarOD ? `6/${finalVaFarOD}` : null, final_va_far_od_add: finalVaFarODAdd || null,
-        final_va_far_os: finalVaFarOS ? `6/${finalVaFarOS}` : null, final_va_far_os_add: finalVaFarOSAdd || null,
-        final_va_near_od: finalVaNearOD ? `N${finalVaNearOD}` : null, final_va_near_os: finalVaNearOS ? `N${finalVaNearOS}` : null,
+        va_far_od: vaFarOD || null,
+        va_far_os: vaFarOS || null,
+        va_near_od: vaNearOD ? `N${vaNearOD}` : null,
+        va_near_os: vaNearOS ? `N${vaNearOS}` : null,
+        va_pinhole_od: vaPinholeOD || null,
+        va_pinhole_os: vaPinholeOS || null,
+        px_va_far_od: pxVaFarOD || null,
+        px_va_far_os: pxVaFarOS || null,
+        px_va_near_od: pxVaNearOD ? `N${pxVaNearOD}` : null,
+        px_va_near_os: pxVaNearOS ? `N${pxVaNearOS}` : null,
+        iop_od: iopOD ? `${iopOD}mmHg` : null,
+        iop_os: iopOS ? `${iopOS}mmHg` : null,
+        ret_va_far_od: retVaFarOD || null,
+        ret_va_far_os: retVaFarOS || null,
+        final_va_far_od: finalVaFarOD || null,
+        final_va_far_os: finalVaFarOS || null,
+        final_va_near_od: finalVaNearOD ? `N${finalVaNearOD}` : null,
+        final_va_near_os: finalVaNearOS ? `N${finalVaNearOS}` : null,
       },
       refraction: {
         has_prx: hasPrx,
@@ -486,9 +432,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
 
-    // If the doctor set a follow-up date, automatically create a booked
-    // appointment so it appears on the appointments page without any
-    // extra manual step from the receptionist.
     if (nextAppointment) {
       await supabase.from('appointments').insert({
         patient_id: patientId,
@@ -496,16 +439,9 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         service_type: 'Routine eye exam',
         status: 'booked',
       })
-      // We intentionally don't block on this error — the visit record
-      // was already saved successfully. A duplicate appointment (if the
-      // doctor saves twice) will just be a no-op once the unique
-      // constraint is in place.
     }
 
-    // Visit saved to the database — the draft is no longer needed, so clear it
-    // to avoid a stale draft reappearing next time this patient is opened.
     clearDraft()
-
     router.push(`/dashboard/patients/${patientId}`)
     router.refresh()
   }
@@ -513,7 +449,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   return (
     <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 text-sm">
 
-      {/* Restore-draft banner — shown only when an unsaved draft was found */}
       {draftFound && (
         <div className="rounded-lg border border-brand/30 bg-brand/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -535,7 +470,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         </div>
       )}
 
-      {/* Saved indicator — appears once autosave has written a draft */}
       {restored && lastSaved && (
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
           <svg className="w-3.5 h-3.5 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -565,7 +499,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       </div>
       <div className="flex flex-col gap-3">
         <EyeRow label="Sphere" odContent={<OD value={sphPrxOD} onChange={setSphPrxOD} />} osContent={<OS value={sphPrxOS} onChange={setSphPrxOS} />} />
-        <EyeRow label="Cylinder" odContent={<OD value={cylPrxOD} onChange={setCylPrxOD} />} osContent={<OS value={cylPrxOS} onChange={setCylPrxOS} />} />
+        <EyeRow label="Cylinder" odContent={<OD value={cylPrxOD} onChange={setCylPrxOD} />} osContent={<OS value={cylPrxOS} onChange={setSphPrxOS} />} />
         <EyeRow label="Axis" odContent={<SuffixInput value={axisPrxOD} onChange={setAxisPrxOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisPrxOS} onChange={setAxisPrxOS} suffix="°" colorClass={OS_CLASS} />} />
         <EyeRow label="Add" odContent={<OD value={addPrxOD} onChange={setAddPrxOD} />} osContent={<OS value={addPrxOS} onChange={setAddPrxOS} />} />
       </div>
@@ -580,16 +514,16 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       <EyeColHeaders />
       <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
-        <EyeRow label="@Far" odContent={<FractionInput value={vaFarOD} onChange={setVaFarOD} addValue={vaFarODAdd} onAddChange={setVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaFarOS} onChange={setVaFarOS} addValue={vaFarOSAdd} onAddChange={setVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Far" odContent={<FractionInput value={vaFarOD} onChange={setVaFarOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaFarOS} onChange={setVaFarOS} colorClass={OS_CLASS} label="OS (Left)" />} />
         <EyeRow label="@Near" odContent={<NearInput value={vaNearOD} onChange={setVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={vaNearOS} onChange={setVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
-        <EyeRow label="Pin Hole" odContent={<FractionInput value={vaPinholeOD} onChange={setVaPinholeOD} addValue={vaPinholeODAdd} onAddChange={setVaPinholeODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaPinholeOS} onChange={setVaPinholeOS} addValue={vaPinholeOSAdd} onAddChange={setVaPinholeOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="Pin Hole" odContent={<FractionInput value={vaPinholeOD} onChange={setVaPinholeOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={vaPinholeOS} onChange={setVaPinholeOS} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
       <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">With Correction</p>
       <EyeColHeaders />
       <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
-        <EyeRow label="@Far" odContent={<FractionInput value={pxVaFarOD} onChange={setPxVaFarOD} addValue={pxVaFarODAdd} onAddChange={setPxVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={pxVaFarOS} onChange={setPxVaFarOS} addValue={pxVaFarOSAdd} onAddChange={setPxVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Far" odContent={<FractionInput value={pxVaFarOD} onChange={setPxVaFarOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={pxVaFarOS} onChange={setPxVaFarOS} colorClass={OS_CLASS} label="OS (Left)" />} />
         <EyeRow label="@Near" odContent={<NearInput value={pxVaNearOD} onChange={setPxVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={pxVaNearOS} onChange={setPxVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
@@ -613,11 +547,11 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="text-xs font-semibold text-pink-400 mb-1 hidden sm:block">OD (Right)</p>
-          <textarea value={anteriorOD} onChange={e => setAnteriorOD(e.target.value)} rows={5} placeholder="OD findings…" className="w-full rounded border border-pink-200 bg-pink-50 p-2 text-sm resize-none" />
+          <textarea value={anteriorOD} onChange={e => setAnteriorOD(e.target.value)} rows={5} className="w-full rounded border border-pink-200 bg-pink-50 p-2 text-sm resize-none" />
         </div>
         <div>
           <p className="text-xs font-semibold text-green-500 mb-1 hidden sm:block">OS (Left)</p>
-          <textarea value={anteriorOS} onChange={e => setAnteriorOS(e.target.value)} rows={5} placeholder="OS findings…" className="w-full rounded border border-green-200 bg-green-50 p-2 text-sm resize-none" />
+          <textarea value={anteriorOS} onChange={e => setAnteriorOS(e.target.value)} rows={5} className="w-full rounded border border-green-200 bg-green-50 p-2 text-sm resize-none" />
         </div>
       </div>
 
@@ -645,8 +579,6 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         />
         <EyeRow label="Cupping" odContent={<SuffixInput value={cupOD} onChange={setCupOD} suffix="%" colorClass={OD_CLASS} />} osContent={<SuffixInput value={cupOS} onChange={setCupOS} suffix="%" colorClass={OS_CLASS} />} />
       </div>
-
-      {/* Unlabelled posterior free-text */}
       <div className="grid grid-cols-2 gap-3 mt-2">
         <textarea value={posteriorOD} onChange={e => setPosteriorOD(e.target.value)} rows={4} placeholder="OD posterior notes…" className="w-full rounded border border-yellow-200 bg-[#fff5cd] p-2 text-sm resize-none" />
         <textarea value={posteriorOS} onChange={e => setPosteriorOS(e.target.value)} rows={4} placeholder="OS posterior notes…" className="w-full rounded border border-yellow-200 bg-[#fff5cd] p-2 text-sm resize-none" />
@@ -660,11 +592,12 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <EyeRow label="Cylinder" odContent={<OD value={cylRetOD} onChange={setCylRetOD} />} osContent={<OS value={cylRetOS} onChange={setCylRetOS} />} />
         <EyeRow label="Axis" odContent={<SuffixInput value={axisRetOD} onChange={setAxisRetOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisRetOS} onChange={setAxisRetOS} suffix="°" colorClass={OS_CLASS} />} />
       </div>
+      {/* @Near removed from Retinoscopy per clinic request */}
       <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">V.A after Retinoscopy</p>
       <EyeColHeaders />
+      <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
-        <EyeRow label="@Far" odContent={<FractionInput value={retVaFarOD} onChange={setRetVaFarOD} addValue={retVaFarODAdd} onAddChange={setRetVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={retVaFarOS} onChange={setRetVaFarOS} addValue={retVaFarOSAdd} onAddChange={setRetVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
-        <EyeRow label="@Near" odContent={<NearInput value={retVaNearOD} onChange={setRetVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={retVaNearOS} onChange={setRetVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Far" odContent={<FractionInput value={retVaFarOD} onChange={setRetVaFarOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={retVaFarOS} onChange={setRetVaFarOS} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
       <SectionHeader title="Subjective Refraction" />
@@ -688,8 +621,9 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       </div>
       <p className="text-xs sm:text-sm font-semibold uppercase text-gray-600 mt-2">V.A after Final Prescription</p>
       <EyeColHeaders />
+      <ODOSDesktopHeader />
       <div className="flex flex-col gap-3">
-        <EyeRow label="@Far" odContent={<FractionInput value={finalVaFarOD} onChange={setFinalVaFarOD} addValue={finalVaFarODAdd} onAddChange={setFinalVaFarODAdd} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={finalVaFarOS} onChange={setFinalVaFarOS} addValue={finalVaFarOSAdd} onAddChange={setFinalVaFarOSAdd} colorClass={OS_CLASS} label="OS (Left)" />} />
+        <EyeRow label="@Far" odContent={<FractionInput value={finalVaFarOD} onChange={setFinalVaFarOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<FractionInput value={finalVaFarOS} onChange={setFinalVaFarOS} colorClass={OS_CLASS} label="OS (Left)" />} />
         <EyeRow label="@Near" odContent={<NearInput value={finalVaNearOD} onChange={setFinalVaNearOD} colorClass={OD_CLASS} label="OD (Right)" />} osContent={<NearInput value={finalVaNearOS} onChange={setFinalVaNearOS} colorClass={OS_CLASS} label="OS (Left)" />} />
       </div>
 
@@ -698,19 +632,47 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
       <SectionHeader title="Drug Prescription" />
       <div className="flex flex-col gap-2">
+        {/* Column headers — only shown on first row */}
+        <div className="hidden sm:grid sm:grid-cols-12 sm:gap-2 px-0">
+          <div className="col-span-2"><span className="text-xs font-medium text-gray-500">Type</span></div>
+          <div className="col-span-4"><span className="text-xs font-medium text-gray-500">Drug name</span></div>
+          <div className="col-span-2"><span className="text-xs font-medium text-gray-500">Qty</span></div>
+          <div className="col-span-2"><span className="text-xs font-medium text-gray-500">Freq</span></div>
+          <div className="col-span-2"><span className="text-xs font-medium text-gray-500">Duration</span></div>
+        </div>
         {drugs.map((d, i) => (
-          <div key={i} className="grid grid-cols-7 gap-2 items-end">
-            <Sel label={i === 0 ? 'Type' : ''} value={d.type} onChange={v => updateDrug(i, 'type', v)} options={DRUG_TYPES} />
-            <div className="col-span-4">
-              <label className="flex flex-col gap-1">
-                {i === 0 && <span className="text-xs font-medium text-gray-600">Drug name</span>}
-                <input value={d.name} onChange={e => updateDrug(i, 'name', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full" />
-              </label>
+          <div key={i} className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
+            {/* Type */}
+            <div className="col-span-1 sm:col-span-2">
+              {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Type</span>}
+              <select value={d.type} onChange={e => updateDrug(i, 'type', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
+                {DRUG_TYPES.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+              </select>
             </div>
-            <div className="col-span-1">
-              <Sel label={i === 0 ? 'Freq' : ''} value={d.freq} onChange={v => updateDrug(i, 'freq', v)} options={DRUG_FREQS} />
+            {/* Drug name */}
+            <div className="col-span-1 sm:col-span-4">
+              {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Drug name</span>}
+              <input value={d.name} onChange={e => updateDrug(i, 'name', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full" />
             </div>
-            <div className="flex items-end pb-0.5">
+            {/* Qty */}
+            <div className="col-span-1 sm:col-span-2">
+              {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Qty</span>}
+              <input value={d.qty} onChange={e => updateDrug(i, 'qty', e.target.value)} placeholder="e.g. 30" className="rounded border border-gray-300 p-1.5 text-sm w-full" />
+            </div>
+            {/* Freq */}
+            <div className="col-span-1 sm:col-span-2">
+              {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Freq</span>}
+              <select value={d.freq} onChange={e => updateDrug(i, 'freq', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
+                {DRUG_FREQS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+              </select>
+            </div>
+            {/* Duration */}
+            <div className="col-span-1 sm:col-span-2">
+              {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Duration</span>}
+              <input value={d.duration} onChange={e => updateDrug(i, 'duration', e.target.value)} placeholder="e.g. 5 days" className="rounded border border-gray-300 p-1.5 text-sm w-full" />
+            </div>
+            {/* Remove button */}
+            <div className="col-span-1 flex items-end pb-0.5">
               {drugs.length > 1 && (
                 <button type="button" onClick={() => removeDrug(i)} className="text-xs text-red-400 hover:text-red-600 px-1">✕</button>
               )}
@@ -740,7 +702,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         <span className="text-xs font-medium text-gray-600">Slated for</span>
         <input type="date" value={nextAppointment} onChange={e => setNextAppointment(e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm" />
       </label>
-      <p className="text-xs text-gray-400">This date will appear on the dashboard follow-ups list.</p>
+      <p className="text-xs text-gray-400">This date will appear on the dashboard follow-ups list and create a booked appointment.</p>
 
       <SectionHeader title="Notes" />
       <YellowTextarea label="" value={notes} onChange={setNotes} rows={4} />

@@ -7,10 +7,6 @@ import { Separator } from '@/components/ui/separator'
 import VisitDocuments from '@/components/visits/VisitDocuments'
 import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
 
-// ---------------------------------------------------------------------------
-// Shared layout primitives
-// ---------------------------------------------------------------------------
-
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
   return (
@@ -39,7 +35,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-// OD/OS grid row used by structured (new) visits
 function EyeRow({ label, od, os }: { label: string; od?: string; os?: string }) {
   if (!od && !os) return null
   return (
@@ -51,7 +46,6 @@ function EyeRow({ label, od, os }: { label: string; od?: string; os?: string }) 
   )
 }
 
-// Column headers for the OD/OS grid
 function EyeGridHeader({ left = 'OD (Right)', right = 'OS (Left)' }: { left?: string; right?: string }) {
   return (
     <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground mb-2">
@@ -62,8 +56,6 @@ function EyeGridHeader({ left = 'OD (Right)', right = 'OS (Left)' }: { left?: st
   )
 }
 
-// Raw text block used by legacy imported visits — preserves line breaks,
-// monospace font makes optical data (SPH/CYL/AXIS) easier to scan
 function RawBlock({ text }: { text: string }) {
   return (
     <div className="overflow-x-auto -mx-1">
@@ -75,38 +67,14 @@ function RawBlock({ text }: { text: string }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Format detectors
-// A visit is "legacy" (raw imported text) when the jsonb contains a "raw"
-// key or raw clinical text keys (auto_refractor, tonometry, etc.) rather
-// than structured per-field keys (sph_prx_od, va_far_od, lid_od, etc.)
-// ---------------------------------------------------------------------------
-
-function isLegacyEyeTest(e: Record<string, any>) {
-  return Boolean(e.raw)
-}
-
-function isLegacyRefraction(r: Record<string, any>) {
-  return Boolean(r.auto_refractor || r.retinoscopy || r.final_subjective_rx)
-}
-
-function isLegacyAnterior(ant: Record<string, any>) {
-  return Boolean(ant.tonometry || ant.external_exam || ant.internal_exam)
-}
-
-// ---------------------------------------------------------------------------
-// Section renderers — each handles both structured and legacy formats
-// ---------------------------------------------------------------------------
+function isLegacyEyeTest(e: Record<string, any>) { return Boolean(e.raw) }
+function isLegacyRefraction(r: Record<string, any>) { return Boolean(r.auto_refractor || r.retinoscopy || r.final_subjective_rx) }
+function isLegacyAnterior(ant: Record<string, any>) { return Boolean(ant.tonometry || ant.external_exam || ant.internal_exam) }
 
 function VisualAcuitySection({ e }: { e: Record<string, any> }) {
   if (isLegacyEyeTest(e)) {
-    return (
-      <Section title="Visual acuity">
-        <RawBlock text={e.raw} />
-      </Section>
-    )
+    return <Section title="Visual acuity"><RawBlock text={e.raw} /></Section>
   }
-
   const rows: [string, string?, string?][] = [
     ['@Far', e.va_far_od, e.va_far_os],
     ['@Near', e.va_near_od, e.va_near_os],
@@ -115,15 +83,11 @@ function VisualAcuitySection({ e }: { e: Record<string, any> }) {
     ['@Near (with Rx)', e.px_va_near_od, e.px_va_near_os],
     ['IOP', e.iop_od, e.iop_os],
   ].filter(([, a, b]) => a || b) as [string, string?, string?][]
-
   if (rows.length === 0) return null
-
   return (
     <Section title="Visual acuity">
       <EyeGridHeader />
-      {rows.map(([label, od, os]) => (
-        <EyeRow key={label} label={label} od={od} os={os} />
-      ))}
+      {rows.map(([label, od, os]) => <EyeRow key={label} label={label} od={od} os={os} />)}
       {(e.va_chart || e.va_type) && (
         <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
           {e.va_type && <span>Type: {e.va_type}</span>}
@@ -144,7 +108,6 @@ function RefractionSection({ r }: { r: Record<string, any> }) {
       </Section>
     )
   }
-
   const rows: [string, string?, string?][] = [
     ['Sph (subjective)', r.sph_prx_od, r.sph_prx_os],
     ['Cyl (subjective)', r.cyl_prx_od, r.cyl_prx_os],
@@ -161,15 +124,11 @@ function RefractionSection({ r }: { r: Record<string, any> }) {
     ['Axis (final)', r.axis_final_od, r.axis_final_os],
     ['Add (final)', r.add_final_od, r.add_final_os],
   ].filter(([, a, b]) => a || b) as [string, string?, string?][]
-
   if (rows.length === 0) return null
-
   return (
     <Section title="Refraction">
       <EyeGridHeader left="OD" right="OS" />
-      {rows.map(([label, od, os]) => (
-        <EyeRow key={label} label={label} od={od} os={os} />
-      ))}
+      {rows.map(([label, od, os]) => <EyeRow key={label} label={label} od={od} os={os} />)}
     </Section>
   )
 }
@@ -184,56 +143,34 @@ function AnteriorSection({ ant }: { ant: Record<string, any> }) {
       </Section>
     )
   }
-
-  const rows: [string, string?, string?][] = [
-    ['Lid', ant.lid_od, ant.lid_os],
-    ['Conjunctiva', ant.conjunctiva_od, ant.conjunctiva_os],
-    ['Cornea', ant.cornea_od, ant.cornea_os],
-    ['Iris', ant.iris_od, ant.iris_os],
-    ['Pupil', ant.pupil_od, ant.pupil_os],
-    ['Lens', ant.lens_od, ant.lens_os],
-  ].filter(([, a, b]) => a || b) as [string, string?, string?][]
-
-  if (rows.length === 0) return null
-
+  // For new structured visits, show notes_od / notes_os free text
+  if (!ant.notes_od && !ant.notes_os) return null
   return (
     <Section title="External exam (anterior segment)">
       <EyeGridHeader left="OD" right="OS" />
-      {rows.map(([label, od, os]) => (
-        <EyeRow key={label} label={label} od={od} os={os} />
-      ))}
+      <EyeRow label="Findings" od={ant.notes_od} os={ant.notes_os} />
     </Section>
   )
 }
 
 function PosteriorSection({ post }: { post: Record<string, any> }) {
-  // Posterior segment is only ever used by structured (new) visits —
-  // legacy imports didn't have a separate posterior field.
   const rows: [string, string?, string?][] = [
     ['Disc', post.disc_od, post.disc_os],
     ['Cupping', post.cup_od, post.cup_os],
-    ['Macula', post.macula_od, post.macula_os],
+    ['Notes', post.notes_od, post.notes_os],
   ].filter(([, a, b]) => a || b) as [string, string?, string?][]
-
   if (rows.length === 0) return null
-
   return (
     <Section title="Ophthalmoscopy (posterior segment)">
       <EyeGridHeader left="OD" right="OS" />
-      {rows.map(([label, od, os]) => (
-        <EyeRow key={label} label={label} od={od} os={os} />
-      ))}
+      {rows.map(([label, od, os]) => <EyeRow key={label} label={label} od={od} os={os} />)}
     </Section>
   )
 }
 
 function MedicationsSection({ meds }: { meds: any[] }) {
   if (meds.length === 0) return null
-
-  // Legacy imported visits store drugs as [{ raw: "Gutt catacure I x bd..." }]
-  // New visits use [{ type, name, freq }]
   const isLegacy = meds.some(m => m.raw && !m.name)
-
   if (isLegacy) {
     return (
       <Section title="Drug prescription">
@@ -245,28 +182,24 @@ function MedicationsSection({ meds }: { meds: any[] }) {
       </Section>
     )
   }
-
   const activeMeds = meds.filter(m => m.name || m.type)
   if (activeMeds.length === 0) return null
-
   return (
     <Section title="Drug prescription">
       <div className="flex flex-col gap-2">
         {activeMeds.map((m, i) => (
-          <div key={i} className="flex items-center gap-3 text-sm">
-            {m.type && <Badge variant="outline" className="text-xs">{m.type}</Badge>}
+          <div key={i} className="flex flex-wrap items-center gap-2 text-sm py-1 border-b border-gray-50 last:border-0">
+            {m.type && <Badge variant="outline" className="text-xs shrink-0">{m.type}</Badge>}
             <span className="font-medium">{m.name}</span>
+            {m.qty && <span className="text-muted-foreground text-xs">Qty: {m.qty}</span>}
             {m.freq && <span className="text-muted-foreground">× {m.freq}</span>}
+            {m.duration && <span className="text-muted-foreground text-xs">· {m.duration}</span>}
           </div>
         ))}
       </div>
     </Section>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
 
 export default async function VisitDetailPage({
   params,
@@ -298,7 +231,7 @@ export default async function VisitDetailPage({
     .eq('record_id', visitId)
     .order('created_at', { ascending: true })
 
- if (error || !visit) {
+  if (error || !visit) {
     return (
       <main className="w-full py-2">
         <p className="text-red-500 text-sm">Visit not found.</p>
@@ -312,12 +245,8 @@ export default async function VisitDetailPage({
   const post: Record<string, any> = visit.posterior_segment ?? {}
   const meds: any[] = visit.medications ?? []
 
-  // Display file_number if available, otherwise fall back to legacy_id
-  const patientRef = patient?.file_number
-    ? `#${patient.file_number}`
-    : patient?.legacy_id
-    ? `#${patient.legacy_id}`
-    : '—'
+  // File number — consistent H3 teal style across all pages
+  const fileNumber = patient?.file_number ?? patient?.legacy_id?.toString() ?? null
 
   return (
     <main className="w-full py-2">
@@ -331,6 +260,12 @@ export default async function VisitDetailPage({
       {/* Visit header */}
       <div className="mt-4 flex items-start justify-between">
         <div>
+          {/* File number — teal H3, consistent with patient detail and visit form pages */}
+          {fileNumber && (
+            <h3 className="text-lg font-semibold text-brand mb-1">
+              File #{fileNumber}
+            </h3>
+          )}
           <h1 className="text-3xl font-semibold tracking-tight">
             {new Date(visit.visit_date).toLocaleDateString('en-GB', {
               day: 'numeric',
@@ -338,10 +273,7 @@ export default async function VisitDetailPage({
               year: 'numeric',
             })}
           </h1>
-         <div className="mt-2 flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              Patient {patientRef}
-            </Badge>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {(visit as any).doctor?.full_name
                 ? `Seen by ${(visit as any).doctor.full_name}`
@@ -371,7 +303,6 @@ export default async function VisitDetailPage({
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
-        {/* Presenting complaint */}
         <Section title="Presenting complaint">
           <Row label="Reason for visit" value={visit.reason_for_visit} />
           <Row label="Symptoms" value={visit.symptoms_presented} />
@@ -380,19 +311,11 @@ export default async function VisitDetailPage({
           <Row label="Blood pressure" value={visit.bp} />
         </Section>
 
-        {/* Visual acuity — handles both structured and legacy raw formats */}
         <VisualAcuitySection e={e} />
-
-        {/* Refraction — handles both structured and legacy raw formats */}
         <RefractionSection r={r} />
-
-        {/* Anterior segment — handles both structured and legacy raw formats */}
         <AnteriorSection ant={ant} />
-
-        {/* Posterior segment — structured only (legacy imports didn't have this) */}
         <PosteriorSection post={post} />
 
-        {/* Diagnosis */}
         {(visit.diagnosis || visit.referral) && (
           <Section title="Diagnosis & management">
             <Row label="Diagnosis" value={visit.diagnosis} />
@@ -402,17 +325,14 @@ export default async function VisitDetailPage({
           </Section>
         )}
 
-        {/* Medications — handles both structured and legacy raw formats */}
         <MedicationsSection meds={meds} />
 
-        {/* Notes */}
         {visit.notes && (
           <Section title="Notes">
             <p className="text-sm text-gray-700">{visit.notes}</p>
           </Section>
         )}
 
-        {/* Record history */}
         {auditEntries && auditEntries.length > 0 && (
           <div className="mt-2 border-t pt-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-300">
@@ -427,14 +347,11 @@ export default async function VisitDetailPage({
                   </span>
                   {' · '}
                   {new Date(entry.created_at).toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
+                    day: 'numeric', month: 'short', year: 'numeric',
                   })}
                   {' at '}
                   {new Date(entry.created_at).toLocaleTimeString('en-GB', {
-                    hour: '2-digit',
-                    minute: '2-digit',
+                    hour: '2-digit', minute: '2-digit',
                   })}
                 </li>
               ))}
@@ -442,7 +359,6 @@ export default async function VisitDetailPage({
           </div>
         )}
 
-        {/* Documents */}
         <div className="mt-2">
           <div className="rounded-lg border border-border bg-white p-5">
             <div className="flex items-center gap-2 mb-4">

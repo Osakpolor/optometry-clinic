@@ -19,9 +19,6 @@ export default async function PatientDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  // Get the logged-in user's role so we can pass it to EditPatientDialog.
-  // The dialog uses this to decide whether to show the file_number field.
-  // We fetch it server-side so the client never decides its own permissions.
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: staffProfile } = await supabase
@@ -61,12 +58,8 @@ export default async function PatientDetailPage({
     )
   }
 
-  // Show file_number if set, otherwise fall back to legacy_id, otherwise nothing
-  const patientRef = patient.file_number
-    ? `#${patient.file_number}`
-    : patient.legacy_id
-    ? `#${patient.legacy_id}`
-    : null
+  // File number — single source of truth for the clinic's reference
+  const fileNumber = patient.file_number ?? patient.legacy_id?.toString() ?? null
 
   const statusColors: Record<string, string> = {
     booked:    'bg-blue-50 text-blue-700 border-blue-200',
@@ -88,26 +81,25 @@ export default async function PatientDetailPage({
       {/* Patient header */}
       <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
+          {/* File number — prominent H3, clinic's primary reference */}
+          {fileNumber ? (
+            <h3 className="text-lg font-semibold text-brand mb-1">
+              File #{fileNumber}
+            </h3>
+          ) : (
+            <Badge
+              variant="outline"
+              className="text-xs text-amber-700 border-amber-300 bg-amber-50 mb-2"
+            >
+              No file number assigned
+            </Badge>
+          )}
+
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             {patient.full_name}
           </h1>
 
           <div className="mt-2 flex flex-wrap gap-2 sm:gap-3">
-            {/* File number badge — shown for all staff, label reflects source */}
-            {patientRef && (
-              <Badge variant="outline" className="text-xs font-medium">
-                Patient {patientRef}
-              </Badge>
-            )}
-            {/* Flag patients with no file number so admins know to assign one */}
-            {!patient.file_number && !patient.legacy_id && (
-              <Badge
-                variant="outline"
-                className="text-xs text-amber-700 border-amber-300 bg-amber-50"
-              >
-                No file number
-              </Badge>
-            )}
             {patient.sex && (
               <Badge variant="outline" className="text-xs">
                 {patient.sex}
@@ -148,7 +140,6 @@ export default async function PatientDetailPage({
             }}
             userRole={userRole}
           />
-          {/* Delete button — admin only, soft delete */}
           {userRole === 'admin' && (
             <DeletePatientButton
               patientId={patient.id}
@@ -253,7 +244,7 @@ export default async function PatientDetailPage({
           </CardContent>
         </Card>
 
-        {/* Legacy documents from patient-documents storage bucket */}
+        {/* Legacy documents */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-medium">Legacy records</CardTitle>

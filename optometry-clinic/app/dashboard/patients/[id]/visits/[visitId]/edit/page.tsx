@@ -1,3 +1,5 @@
+// app/dashboard/patients/[id]/visits/[visitId]/edit/page.tsx
+
 import { createClient } from '@/lib/supabase/server'
 import EditVisitForm from '@/components/EditVisitForm'
 import { redirect } from 'next/navigation'
@@ -21,7 +23,7 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
 
   const { data: patient } = await supabase
     .from('patients')
-    .select('full_name')
+    .select('full_name, file_number, legacy_id')
     .eq('id', id)
     .single()
 
@@ -33,6 +35,8 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
     )
   }
 
+  const fileNumber = patient?.file_number ?? patient?.legacy_id?.toString() ?? null
+
   return (
     <main className="w-full py-2">
       <Link
@@ -41,6 +45,13 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
       >
         ← Back to visit
       </Link>
+
+      {/* Page header with prominent file number */}
+      {fileNumber && (
+        <h3 className="text-lg font-semibold text-brand mb-1">
+          File #{fileNumber}
+        </h3>
+      )}
       <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
         Edit visit — {patient?.full_name}
       </h1>
@@ -49,6 +60,7 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
           day: 'numeric', month: 'long', year: 'numeric'
         })}
       </p>
+
       <EditVisitForm patientId={id} visitId={visitId} visit={visit} />
     </main>
   )

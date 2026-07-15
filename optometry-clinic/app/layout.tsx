@@ -34,6 +34,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      style={{ fontSize: '17.6px' }}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body

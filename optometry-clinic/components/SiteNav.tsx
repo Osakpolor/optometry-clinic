@@ -9,8 +9,7 @@ export default function SiteNav() {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  if (pathname.startsWith('/dashboard')) return null
-
+if (pathname.startsWith('/dashboard') || pathname === '/book') return null
   return (
     <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
       <nav className="mx-auto flex max-w-4xl items-center justify-between px-4 sm:px-6 py-3">

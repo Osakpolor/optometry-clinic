@@ -31,11 +31,14 @@ function SuccessScreen({ fullName, date, time }: { fullName: string; date: strin
   const router = useRouter()
   const [seconds, setSeconds] = useState(6)
 
-  useEffect(() => {
-    if (seconds <= 0) { router.push('/'); return }
-    const t = setTimeout(() => setSeconds(s => s - 1), 1000)
-    return () => clearTimeout(t)
-  }, [seconds, router])
+ useEffect(() => {
+  if (seconds <= 0) {
+    window.location.href = 'https://olueyeclinic.com'
+    return
+  }
+  const t = setTimeout(() => setSeconds(s => s - 1), 1000)
+  return () => clearTimeout(t)
+}, [seconds, router])
 
   return (
     <main className="mx-auto max-w-md px-6 py-20 text-center">

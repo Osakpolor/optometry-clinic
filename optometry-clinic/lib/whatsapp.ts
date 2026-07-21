@@ -106,7 +106,7 @@ export async function sendVisitSummaryWhatsApp({
     to,
     type: 'template',
     template: {
-      name: 'olu_eye_clinic_visit_summary',
+      name: 'olu_eye_clinic_visit_summary_v2',
       language: { code: 'en_US' },
       components: [
         {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
@@ -440,6 +441,17 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
         status: 'booked',
       })
     }
+
+    // Fire WhatsApp post-visit summary — runs server-side so the
+    // access token never touches the client. Fires after the visit
+    // is confirmed saved. Errors are logged but never block navigation.
+    sendVisitWhatsApp(patientId, data.id)
+      .then(result => {
+        if (!result.success) {
+          console.warn('WhatsApp send skipped:', result.error)
+        }
+      })
+      .catch(err => console.error('WhatsApp send failed:', err))
 
     clearDraft()
     router.push(`/dashboard/patients/${patientId}`)

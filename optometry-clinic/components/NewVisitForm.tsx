@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
 
+
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
 const DRUG_TYPES = ['', 'Tab', 'Cap', 'Gutt', 'Oc']
@@ -236,6 +237,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [nextAppointment, setNextAppointment] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   const [draftFound, setDraftFound] = useState(false)
@@ -246,6 +248,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
   const hydratedRef = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isSubmittingRef = useRef(false)
 
   function collectFormData() {
     return {
@@ -362,6 +365,12 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // Ref guard blocks rapid repeat clicks synchronously — state-based
+    // guards fail here because setSaving hasn't propagated yet when the
+    // 2nd/3rd click fires. A ref updates instantly.
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+
     setSaving(true)
     setErrorMsg('')
 
@@ -432,8 +441,14 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     .select('id')
 
     setSaving(false)
-    if (error) { setErrorMsg(error.message); return }
+    if (error) {
+      setErrorMsg(error.message)
+      setSaving(false)
+      isSubmittingRef.current = false
+      return
+    }
 
+    // Auto-create appointment from follow-up date
     if (nextAppointment) {
       await supabase.from('appointments').insert({
         patient_id: patientId,
@@ -443,20 +458,29 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       })
     }
 
-    // Fire WhatsApp post-visit summary — runs server-side so the
-    // access token never touches the client. Fires after the visit
-    // is confirmed saved. Errors are logged but never block navigation.
-    sendVisitWhatsApp(patientId, visitData?.[0]?.id ?? '')
-      .then(result => {
-        if (!result.success) {
-          console.warn('WhatsApp send skipped:', result.error)
+    // Send WhatsApp post-visit summary — awaited so the request fully
+    // completes before we navigate away. The visit is already saved,
+    // so even if WhatsApp fails the clinical record is safe.
+    const visitId = visitData?.[0]?.id ?? ''
+    if (visitId) {
+      try {
+        const waResult = await sendVisitWhatsApp(patientId, visitId)
+        if (!waResult.success) {
+          console.warn('WhatsApp send skipped:', waResult.error)
         }
-      })
-      .catch(err => console.error('WhatsApp send failed:', err))
+      } catch (err) {
+        console.error('WhatsApp send failed:', err)
+      }
+    }
 
     clearDraft()
-    router.push(`/dashboard/patients/${patientId}`)
-    router.refresh()
+
+    // Show the green "Saved" confirmation briefly, then redirect
+    setSaved(true)
+    setTimeout(() => {
+      router.push(`/dashboard/patients/${patientId}`)
+      router.refresh()
+    }, 900)
   }
 
   return (
@@ -720,8 +744,13 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       <SectionHeader title="Notes" />
       <YellowTextarea label="" value={notes} onChange={setNotes} rows={4} />
 
-      <button type="submit" disabled={saving} className="mt-4 rounded bg-black px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">
-        {saving ? 'Saving...' : 'Save visit record'}
+      <button
+        type="submit"
+        disabled={saving || saved}
+        className={`mt-4 rounded px-6 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-70 ${saved ? 'bg-green-600' : 'bg-black'
+          }`}
+      >
+        {saved ? '✓ Saved successfully' : saving ? 'Saving...' : 'Save visit record'}
       </button>
       {errorMsg && <p className="mt-2 text-sm text-red-600">{errorMsg}</p>}
     </form>

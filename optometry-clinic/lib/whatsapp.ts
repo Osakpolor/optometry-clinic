@@ -152,7 +152,7 @@ export async function sendVisitSummaryWhatsApp({
     type: 'template',
     template: {
       name: 'olu_eye_clinic_visit_summary_v2',
-      language: { code: 'en_US' },
+      language: { code: 'en' },
       components: [
         {
           type: 'body',
@@ -178,6 +178,9 @@ export async function sendVisitSummaryWhatsApp({
       body: JSON.stringify(body),
     })
     const data = await response.json()
+
+    console.log('WhatsApp API response:', JSON.stringify(data))
+
     if (!response.ok || data.error) {
       console.error('WhatsApp sendVisitSummaryWhatsApp error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API request failed' }

@@ -94,13 +94,24 @@ export async function sendWhatsAppMessage(
  * Sends a booking confirmation message to a new lead.
  * Used by the /api/whatsapp/send route.
  */
-export async function sendBookingConfirmation(
-  to: string,
-  patientName: string
-): Promise<{ success: boolean; error?: string }> {
+export async function sendBookingConfirmation({
+  to,
+  fullName,
+  service,
+  date,
+  time,
+}: {
+  to: string
+  fullName: string
+  service?: string
+  date?: string
+  time?: string
+}): Promise<{ success: boolean; error?: string }> {
+  const details = [service, date, time].filter(Boolean).join(', ')
   const message =
-    `Hello ${patientName}, thank you for booking with Olu Eye Clinic! ` +
-    `A member of our team will contact you shortly to confirm your appointment. ` +
+    `Hello ${fullName}, thank you for booking with Olu Eye Clinic! ` +
+    (details ? `Your appointment details: ${details}. ` : '') +
+    `A member of our team will contact you shortly to confirm. ` +
     `For enquiries call 09166015438. - OluEyeClnc`
 
   return sendWhatsAppMessage(to, message)
@@ -110,14 +121,18 @@ export async function sendBookingConfirmation(
  * Sends an appointment reminder to a patient.
  * Used by the /api/cron/appointment-reminders route.
  */
-export async function sendAppointmentReminder(
-  to: string,
-  patientName: string,
-  appointmentDate: string
-): Promise<{ success: boolean; error?: string }> {
+export async function sendAppointmentReminder({
+  to,
+  fullName,
+  date,
+}: {
+  to: string
+  fullName: string
+  date: string
+}): Promise<{ success: boolean; error?: string }> {
   const message =
-    `Dear ${patientName}, this is a reminder that your eye check-up at ` +
-    `Olu Eye Clinic is scheduled for ${appointmentDate}. ` +
+    `Dear ${fullName}, this is a reminder that your eye check-up at ` +
+    `Olu Eye Clinic is scheduled for ${date}. ` +
     `Please arrive 10 minutes early. To reschedule call 09166015438. - OluEyeClnc`
 
   return sendWhatsAppMessage(to, message)

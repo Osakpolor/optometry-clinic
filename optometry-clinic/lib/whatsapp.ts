@@ -113,6 +113,76 @@ export async function sendAppointmentReminder({
   return sendWhatsAppMessage(to, message)
 }
 
+
+// ── ADD THIS FUNCTION to lib/whatsapp.ts ──
+// (paste it alongside the other functions, e.g. after sendAppointmentReminder)
+//
+// Sends the appointment reminder as an APPROVED TEMPLATE, so it delivers
+// reliably even to patients who haven't messaged the clinic in 24 hours.
+// This is different from sendAppointmentReminder (free-form) which only
+// works inside an open conversation window.
+//
+// Template: olu_appointment_reminder
+// {{1}} = patient name
+// {{2}} = appointment date (formatted)
+// {{3}} = clinic phone
+
+export async function sendAppointmentReminderTemplate({
+  patientPhone,
+  patientName,
+  appointmentDate,
+}: {
+  patientPhone: string
+  patientName: string
+  appointmentDate: string
+}): Promise<{ success: boolean; error?: string }> {
+  const to = formatNigerianPhone(patientPhone)
+  if (!to) {
+    return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
+  }
+
+  const body = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: 'olu_appointment_reminder',
+      language: { code: 'en' },
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: patientName },
+            { type: 'text', text: appointmentDate },
+            { type: 'text', text: '09166015438' },
+          ],
+        },
+      ],
+    },
+  }
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify(body),
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      console.error('sendAppointmentReminderTemplate error:', data.error ?? data)
+      return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
+    }
+    return { success: true }
+  } catch (err: any) {
+    console.error('sendAppointmentReminderTemplate network error:', err)
+    return { success: false, error: err.message ?? 'Network error' }
+  }
+}
+
+
 // ── Post-visit summary template message ──────────────────────────────────────
 
 export async function sendVisitSummaryWhatsApp({

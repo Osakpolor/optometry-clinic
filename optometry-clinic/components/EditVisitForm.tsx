@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, FormEvent, ReactNode } from 'react'
+import { useState, useRef, FormEvent, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
@@ -255,6 +257,34 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
+  // ── Unsaved changes guard ──
+  // Snapshot all current field values into one object and compare against
+  // the same fields from the original visit prop. If anything differs, the
+  // form is dirty. Captured fresh each render (cheap — just string values).
+  const [savedOk, setSavedOk] = useState(false)
+  function currentSnapshot() {
+    return JSON.stringify({
+      reasonForVisit, symptoms, lastEyeExam, medicalHistory, age, bp, hasPrx,
+      sphPrxOD, cylPrxOD, axisPrxOD, addPrxOD, sphPrxOS, cylPrxOS, axisPrxOS, addPrxOS,
+      vaType, vaChart, vaFarOD, vaFarOS, vaNearOD, vaNearOS, vaPinholeOD, vaPinholeOS,
+      pxVaFarOD, pxVaFarOS, pxVaNearOD, pxVaNearOS,
+      sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
+      iopOD, iopOS, anteriorOD, anteriorOS,
+      discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
+      sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS, retVaFarOD, retVaFarOS,
+      sphSubOD, cylSubOD, axisSubOD, addSubOD, sphSubOS, cylSubOS, axisSubOS, addSubOS,
+      sphFinalOD, cylFinalOD, axisFinalOD, addFinalOD, sphFinalOS, cylFinalOS, axisFinalOS, addFinalOS,
+      finalVaFarOD, finalVaFarOS, finalVaNearOD, finalVaNearOS,
+      diagnosis, drugs, hasReferral, referralFor, refDate, nextAppointment, notes,
+    })
+  }
+  const initialSnapshotRef = useRef<string | null>(null)
+  if (initialSnapshotRef.current === null) {
+    initialSnapshotRef.current = currentSnapshot()
+  }
+  const isDirty = !savedOk && initialSnapshotRef.current !== currentSnapshot()
+  const guard = useUnsavedChanges(isDirty)
+
   function addDrug() { setDrugs(prev => [...prev, { type: '', name: '', qty: '', freq: '', duration: '' }]) }
   function updateDrug(i: number, field: keyof Drug, val: string) { setDrugs(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d)) }
   function removeDrug(i: number) { setDrugs(prev => prev.filter((_, idx) => idx !== i)) }
@@ -346,12 +376,24 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       })
     }
 
+    setSavedOk(true)
+    guard.allowNextNavigation()
     router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
     router.refresh()
   }
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 text-sm">
+
+      <UnsavedChangesModal
+        open={guard.pendingUrl !== null}
+        saving={saving}
+        onSave={async () => {
+          await handleSubmit({ preventDefault: () => {} } as FormEvent)
+        }}
+        onDiscard={guard.confirmLeave}
+        onCancel={guard.cancelLeave}
+      />
 
       <SectionHeader title="Presenting Complaint" />
       <div className="grid grid-cols-2 gap-4">

@@ -4,12 +4,14 @@ import { useState, useEffect, useRef, FormEvent, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
+import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
+import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
 
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
-const DRUG_TYPES = ['', 'Tab', 'Cap', 'Gutt', 'Oc']
-const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte']
+const DRUG_TYPES = ['', 'Tab', 'Cap', 'Syr', 'Gutt', 'Oc']
+const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte', 'Other']
 const DISC_TYPES = ['', 'Type I', 'Type II', 'Type III', 'Type IV', 'Type V']
 
 // Qty and Duration are free text — doctor types e.g. "30" and "5 days" 
@@ -357,6 +359,17 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   }
   function clearDraft() { try { localStorage.removeItem(DRAFT_KEY) } catch {} }
 
+  // ── Unsaved changes guard ──
+  // The form is "dirty" if any field differs from the initial empty state.
+  // We reuse collectFormData() (already defined for autosave) and compare
+  // its JSON against a blank baseline captured on first render.
+  const initialSnapshotRef = useRef<string | null>(null)
+  if (initialSnapshotRef.current === null) {
+    initialSnapshotRef.current = JSON.stringify(collectFormData())
+  }
+  const isDirty = !saved && initialSnapshotRef.current !== JSON.stringify(collectFormData())
+  const guard = useUnsavedChanges(isDirty)
+
   function addDrug() { setDrugs(prev => [...prev, { type: '', name: '', qty: '', freq: '', duration: '' }]) }
   function updateDrug(i: number, field: keyof Drug, val: string) {
     setDrugs(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d))
@@ -477,6 +490,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
     // Show the green "Saved" confirmation briefly, then redirect
     setSaved(true)
+    guard.allowNextNavigation()
     setTimeout(() => {
       router.push(`/dashboard/patients/${patientId}`)
       router.refresh()
@@ -485,6 +499,17 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4 text-sm">
+      <UnsavedChangesModal
+        open={guard.pendingUrl !== null}
+        saving={saving}
+        onSave={async () => {
+          // Trigger the same submit path, then the post-save redirect
+          // will carry the user onward (allowNextNavigation handles it).
+          await handleSubmit({ preventDefault: () => {} } as FormEvent)
+        }}
+        onDiscard={guard.confirmLeave}
+        onCancel={guard.cancelLeave}
+      />
 
       {draftFound && (
         <div className="rounded-lg border border-brand/30 bg-brand/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -696,12 +721,33 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
               {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Qty</span>}
               <input value={d.qty} onChange={e => updateDrug(i, 'qty', e.target.value)} placeholder="e.g. 30" className="rounded border border-gray-300 p-1.5 text-sm w-full" />
             </div>
-            {/* Freq */}
+            {/* Freq — dropdown, or free-text box when 'Other' is chosen or a
+                custom value has been typed (a value not in the preset list) */}
             <div className="col-span-1 sm:col-span-2">
               {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Freq</span>}
-              <select value={d.freq} onChange={e => updateDrug(i, 'freq', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
-                {DRUG_FREQS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-              </select>
+              {(d.freq === 'Other' || (d.freq && !DRUG_FREQS.includes(d.freq))) ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={d.freq === 'Other' ? '' : d.freq}
+                    onChange={e => updateDrug(i, 'freq', e.target.value)}
+                    placeholder="e.g. every 4 hrs"
+                    className="rounded border border-gray-300 p-1.5 text-sm w-full"
+                  />
+                  <button
+                    type="button"
+                    title="Back to list"
+                    onClick={() => updateDrug(i, 'freq', '')}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-1 shrink-0"
+                  >
+                    ↺
+                  </button>
+                </div>
+              ) : (
+                <select value={d.freq} onChange={e => updateDrug(i, 'freq', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
+                  {DRUG_FREQS.map(o => <option key={o} value={o}>{o === 'Other' ? 'Other (type)' : (o || '—')}</option>)}
+                </select>
+              )}
             </div>
             {/* Duration */}
             <div className="col-span-1 sm:col-span-2">

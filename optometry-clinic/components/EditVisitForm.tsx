@@ -6,8 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
-const DRUG_TYPES = ['', 'Tab', 'Cap', 'Gutt', 'Oc']
-const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte']
+const DRUG_TYPES = ['', 'Tab', 'Cap', 'Syr', 'Gutt', 'Oc']
+const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte', 'Other']
 const DISC_TYPES = ['', 'Type I', 'Type II', 'Type III', 'Type IV', 'Type V']
 
 type Drug = { type: string; name: string; qty: string; freq: string; duration: string }
@@ -504,9 +504,29 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
             </div>
             <div className="col-span-1 sm:col-span-2">
               {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Freq</span>}
-              <select value={d.freq} onChange={e => updateDrug(i, 'freq', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
-                {DRUG_FREQS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
-              </select>
+              {(d.freq === 'Other' || (d.freq && !DRUG_FREQS.includes(d.freq))) ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={d.freq === 'Other' ? '' : d.freq}
+                    onChange={e => updateDrug(i, 'freq', e.target.value)}
+                    placeholder="e.g. every 4 hrs"
+                    className="rounded border border-gray-300 p-1.5 text-sm w-full"
+                  />
+                  <button
+                    type="button"
+                    title="Back to list"
+                    onClick={() => updateDrug(i, 'freq', '')}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-1 shrink-0"
+                  >
+                    ↺
+                  </button>
+                </div>
+              ) : (
+                <select value={d.freq} onChange={e => updateDrug(i, 'freq', e.target.value)} className="rounded border border-gray-300 p-1.5 text-sm w-full">
+                  {DRUG_FREQS.map(o => <option key={o} value={o}>{o === 'Other' ? 'Other (type)' : (o || '—')}</option>)}
+                </select>
+              )}
             </div>
             <div className="col-span-1 sm:col-span-2">
               {i === 0 && <span className="text-xs font-medium text-gray-500 sm:hidden">Duration</span>}

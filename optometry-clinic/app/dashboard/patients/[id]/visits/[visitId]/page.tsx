@@ -111,16 +111,25 @@ function RefractionSection({ r }: { r: Record<string, any> }) {
     )
   }
   const rows: [string, string?, string?][] = [
-    ['Sph (subjective)', r.sph_prx_od, r.sph_prx_os],
-    ['Cyl (subjective)', r.cyl_prx_od, r.cyl_prx_os],
-    ['Axis (subjective)', r.axis_prx_od, r.axis_prx_os],
-    ['Add (subjective)', r.add_prx_od, r.add_prx_os],
+    // Lensometry — from the Prescription section (patient's existing glasses)
+    ['Sph (lensometry)', r.sph_prx_od, r.sph_prx_os],
+    ['Cyl (lensometry)', r.cyl_prx_od, r.cyl_prx_os],
+    ['Axis (lensometry)', r.axis_prx_od, r.axis_prx_os],
+    ['Add (lensometry)', r.add_prx_od, r.add_prx_os],
+    // Auto-refraction
     ['Sph (auto)', r.sph_auto_od, r.sph_auto_os],
     ['Cyl (auto)', r.cyl_auto_od, r.cyl_auto_os],
     ['Axis (auto)', r.axis_auto_od, r.axis_auto_os],
+    // Retinoscopy
     ['Sph (ret)', r.sph_ret_od, r.sph_ret_os],
     ['Cyl (ret)', r.cyl_ret_od, r.cyl_ret_os],
     ['Axis (ret)', r.axis_ret_od, r.axis_ret_os],
+    // Subjective refraction — the actual subjective test (was missing before)
+    ['Sph (subjective)', r.sph_sub_od, r.sph_sub_os],
+    ['Cyl (subjective)', r.cyl_sub_od, r.cyl_sub_os],
+    ['Axis (subjective)', r.axis_sub_od, r.axis_sub_os],
+    ['Add (subjective)', r.add_sub_od, r.add_sub_os],
+    // Final prescription
     ['Sph (final)', r.sph_final_od, r.sph_final_os],
     ['Cyl (final)', r.cyl_final_od, r.cyl_final_os],
     ['Axis (final)', r.axis_final_od, r.axis_final_os],

@@ -11,7 +11,7 @@ const DRUG_TYPES = ['', 'Tab', 'Cap', 'Gutt', 'Oc']
 const DRUG_FREQS = ['', 'qds', 'tds', 'bd', 'dly', 'nocte']
 const DISC_TYPES = ['', 'Type I', 'Type II', 'Type III', 'Type IV', 'Type V']
 
-// Qty and Duration are free text — doctor types e.g. "30" and "5 days"
+// Qty and Duration are free text — doctor types e.g. "30" and "5 days" 
 type Drug = { type: string; name: string; qty: string; freq: string; duration: string }
 
 function SectionHeader({ title }: { title: string }) {
@@ -373,7 +373,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       duration: d.duration || null,
     }))
 
-    const { error } = await supabase.from('visit_records').insert({
+    const { data: visitData, error } = await supabase.from('visit_records').insert({
       patient_id: patientId,
       doctor_id: doctorId,
       medical_history: medicalHistory || null,
@@ -429,6 +429,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
       follow_up_date: nextAppointment || null,
       notes: notes || null,
     })
+    .select('id')
 
     setSaving(false)
     if (error) { setErrorMsg(error.message); return }
@@ -445,7 +446,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
     // Fire WhatsApp post-visit summary — runs server-side so the
     // access token never touches the client. Fires after the visit
     // is confirmed saved. Errors are logged but never block navigation.
-    sendVisitWhatsApp(patientId, data.id)
+    sendVisitWhatsApp(patientId, visitData?.[0]?.id ?? '')
       .then(result => {
         if (!result.success) {
           console.warn('WhatsApp send skipped:', result.error)

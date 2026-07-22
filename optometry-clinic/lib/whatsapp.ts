@@ -8,33 +8,16 @@ const API_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Formats a Nigerian phone number to E.164 international format
- * required by WhatsApp (e.g. 08012345678 → 2348012345678).
- */
 export function formatNigerianPhone(phone: string): string | null {
   const digits = phone.replace(/\D/g, '')
-
-  if (digits.startsWith('234') && digits.length >= 13) {
-    return digits
-  }
-  if (digits.startsWith('0') && digits.length === 11) {
-    return '234' + digits.slice(1)
-  }
-  if (digits.length === 10) {
-    return '234' + digits
-  }
-
+  if (digits.startsWith('234') && digits.length >= 13) return digits
+  if (digits.startsWith('0') && digits.length === 11) return '234' + digits.slice(1)
+  if (digits.length === 10) return '234' + digits
   return null
 }
 
-/**
- * Formats the drug prescription array into a single readable text block
- * for the {{3}} template parameter.
- */
 export function formatPrescriptions(medications: any[]): string {
   if (!medications || medications.length === 0) return 'No medications prescribed.'
-
   const lines = medications
     .filter(m => m.name || m.type)
     .map(m => {
@@ -47,16 +30,11 @@ export function formatPrescriptions(medications: any[]): string {
       return parts.join(' ')
     })
     .filter(Boolean)
-
   return lines.length > 0 ? lines.join('\n') : 'No medications prescribed.'
 }
 
-// ── Existing functions (used by webhook, cron, and send routes) ───────────────
+// ── Core send function ────────────────────────────────────────────────────────
 
-/**
- * Sends a free-form text reply to a patient who has messaged the clinic
- * within the last 24 hours. Used by the AI webhook auto-reply.
- */
 export async function sendWhatsAppMessage(
   to: string,
   message: string
@@ -75,14 +53,11 @@ export async function sendWhatsAppMessage(
         text: { body: message },
       }),
     })
-
     const data = await response.json()
-
     if (!response.ok || data.error) {
       console.error('WhatsApp sendWhatsAppMessage error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'API error' }
     }
-
     return { success: true }
   } catch (err: any) {
     console.error('sendWhatsAppMessage network error:', err)
@@ -90,10 +65,8 @@ export async function sendWhatsAppMessage(
   }
 }
 
-/**
- * Sends a booking confirmation message to a new lead.
- * Used by the /api/whatsapp/send route.
- */
+// ── Booking confirmation ──────────────────────────────────────────────────────
+
 export async function sendBookingConfirmation({
   to,
   fullName,
@@ -113,44 +86,35 @@ export async function sendBookingConfirmation({
     (details ? `Your appointment details: ${details}. ` : '') +
     `A member of our team will contact you shortly to confirm. ` +
     `For enquiries call 09166015438. - OluEyeClnc`
-
   return sendWhatsAppMessage(to, message)
 }
 
-/**
- * Sends an appointment reminder to a patient.
- * Used by the /api/cron/appointment-reminders route.
- */
+// ── Appointment reminder ──────────────────────────────────────────────────────
+
 export async function sendAppointmentReminder({
   to,
   fullName,
   date,
+  time,
+  isToday,
 }: {
   to: string
   fullName: string
   date: string
+  time?: string
+  isToday?: boolean
 }): Promise<{ success: boolean; error?: string }> {
+  const when = time ? `${date} at ${time}` : date
+  const urgency = isToday ? 'TODAY ' : ''
   const message =
-    `Dear ${fullName}, this is a reminder that your eye check-up at ` +
-    `Olu Eye Clinic is scheduled for ${date}. ` +
+    `Dear ${fullName}, this is a ${urgency}reminder that your eye check-up at ` +
+    `Olu Eye Clinic is scheduled for ${when}. ` +
     `Please arrive 10 minutes early. To reschedule call 09166015438. - OluEyeClnc`
-
   return sendWhatsAppMessage(to, message)
 }
 
-// ── New: post-visit summary template message ──────────────────────────────────
+// ── Post-visit summary template message ──────────────────────────────────────
 
-/**
- * Sends the post-visit summary WhatsApp template message to a patient
- * after a new visit is saved by the doctor.
- *
- * Template: olu_eye_clinic_visit_summary_v2
- * {{1}} = patient name
- * {{2}} = diagnosis
- * {{3}} = prescriptions block
- * {{4}} = next appointment date
- * {{5}} = Google review link
- */
 export async function sendVisitSummaryWhatsApp({
   patientName,
   patientPhone,
@@ -180,8 +144,6 @@ export async function sendVisitSummaryWhatsApp({
     : 'No follow-up date set'
 
   const diagnosisText = diagnosis?.trim() || 'See clinic notes'
-
-  // Update this env var once the Google Business Profile is live
   const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com'
 
   const body = {
@@ -215,17 +177,11 @@ export async function sendVisitSummaryWhatsApp({
       },
       body: JSON.stringify(body),
     })
-
     const data = await response.json()
-
     if (!response.ok || data.error) {
       console.error('WhatsApp sendVisitSummaryWhatsApp error:', data.error ?? data)
-      return {
-        success: false,
-        error: data.error?.message ?? 'WhatsApp API request failed',
-      }
+      return { success: false, error: data.error?.message ?? 'WhatsApp API request failed' }
     }
-
     return { success: true }
   } catch (err: any) {
     console.error('sendVisitSummaryWhatsApp network error:', err)

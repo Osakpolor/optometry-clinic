@@ -11,17 +11,22 @@
 // once per appointment, no matter how often the cron runs.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendAppointmentReminderTemplate } from '@/lib/whatsapp'
 
 export async function GET(req: NextRequest) {
-  // Only Vercel Cron (with the secret) may call this
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabase = await createClient()
+  // Service-role client — the cron has no user session, so the normal
+  // cookie-based client would be blocked by RLS and silently return
+  // zero rows. Service role bypasses RLS for this trusted server job.
+  const supabase = createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 
   // Work out today / tomorrow / day-after boundaries in UTC. The cron
   // fires at fixed UTC times; we compare against the stored appointment
@@ -45,13 +50,15 @@ export async function GET(req: NextRequest) {
   const errors: string[] = []
 
   // ── Day-of reminders: appointments TODAY, not yet reminded today ──
-  const { data: todayAppts } = await supabase
+  const { data: todayAppts, error: todayErr } = await supabase
     .from('appointments')
     .select('id, appointment_date, reminder_sent_day_of, patients(full_name, phone)')
     .gte('appointment_date', today.toISOString())
     .lt('appointment_date', tomorrow.toISOString())
     .eq('reminder_sent_day_of', false)
     .not('status', 'in', '("cancelled","completed")')
+
+  if (todayErr) errors.push(`today query: ${todayErr.message}`)
 
   for (const apt of todayAppts ?? []) {
     const patient = (apt as any).patients
@@ -75,13 +82,15 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Day-before reminders: appointments TOMORROW, not yet reminded ──
-  const { data: tomorrowAppts } = await supabase
+  const { data: tomorrowAppts, error: tomorrowErr } = await supabase
     .from('appointments')
     .select('id, appointment_date, reminder_sent_day_before, patients(full_name, phone)')
     .gte('appointment_date', tomorrow.toISOString())
     .lt('appointment_date', dayAfter.toISOString())
     .eq('reminder_sent_day_before', false)
     .not('status', 'in', '("cancelled","completed")')
+
+  if (tomorrowErr) errors.push(`tomorrow query: ${tomorrowErr.message}`)
 
   for (const apt of tomorrowAppts ?? []) {
     const patient = (apt as any).patients
@@ -111,6 +120,11 @@ export async function GET(req: NextRequest) {
     success: true,
     dayOfSent,
     dayBeforeSent,
+    // Diagnostics — how many appointments matched each window
+    todayMatched: todayAppts?.length ?? 0,
+    tomorrowMatched: tomorrowAppts?.length ?? 0,
+    windowStart: today.toISOString(),
+    windowEnd: dayAfter.toISOString(),
     errors,
   })
 }

@@ -17,7 +17,7 @@ export function formatNigerianPhone(phone: string): string | null {
 }
 
 export function formatPrescriptions(medications: any[]): string {
-  if (!medications || medications.length === 0) return 'No medications prescribed.'
+  if (!medications || medications.length === 0) return 'None prescribed at this visit.'
   const lines = medications
     .filter(m => m.name || m.type)
     .map(m => {
@@ -30,7 +30,7 @@ export function formatPrescriptions(medications: any[]): string {
       return parts.join(' ')
     })
     .filter(Boolean)
-  return lines.length > 0 ? lines.join('\n') : 'No medications prescribed.'
+  return lines.length > 0 ? lines.join('\n') : 'None prescribed at this visit.'
 }
 
 // ── Core send function ────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ export async function sendVisitSummaryWhatsApp({
         month: 'long',
         year: 'numeric',
       })
-    : 'No follow-up date set'
+    : 'To be scheduled — please contact the clinic'
 
   const diagnosisText = diagnosis?.trim() || 'See clinic notes'
   const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com'

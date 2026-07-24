@@ -30,7 +30,9 @@ export function formatPrescriptions(medications: any[]): string {
       return parts.join(' ')
     })
     .filter(Boolean)
-  return lines.length > 0 ? lines.join('\n') : 'None prescribed at this visit.'
+  const joined = lines.length > 0 ? lines.join('; ') : 'None prescribed at this visit.'
+  // WhatsApp template params reject newlines, tabs, and runs of 4+ spaces
+  return joined.replace(/[\n\t]+/g, ' ').replace(/\s{4,}/g, ' ').trim()
 }
 
 // ── Core send function ────────────────────────────────────────────────────────
@@ -178,6 +180,67 @@ export async function sendAppointmentReminderTemplate({
     return { success: true }
   } catch (err: any) {
     console.error('sendAppointmentReminderTemplate network error:', err)
+    return { success: false, error: err.message ?? 'Network error' }
+  }
+}
+
+
+export async function sendVisitThankYou({
+  patientName,
+  patientPhone,
+  followUpDate,
+}: {
+  patientName: string
+  patientPhone: string
+  followUpDate: string | null
+}): Promise<{ success: boolean; error?: string }> {
+  const to = formatNigerianPhone(patientPhone)
+  if (!to) {
+    return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
+  }
+
+  const appointmentText = followUpDate
+    ? new Date(followUpDate + 'T12:00:00').toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      })
+    : 'to be scheduled — please contact the clinic'
+
+  const body = {
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: {
+      name: 'olu_visit_thankyou',
+      language: { code: 'en' },
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: patientName },
+            { type: 'text', text: appointmentText },
+          ],
+        },
+      ],
+    },
+  }
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify(body),
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      console.error('sendVisitThankYou error:', data.error ?? data)
+      return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
+    }
+    return { success: true }
+  } catch (err: any) {
+    console.error('sendVisitThankYou network error:', err)
     return { success: false, error: err.message ?? 'Network error' }
   }
 }

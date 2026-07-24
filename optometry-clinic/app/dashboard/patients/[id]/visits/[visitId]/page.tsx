@@ -8,6 +8,7 @@ import VisitDocuments from '@/components/visits/VisitDocuments'
 import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
 import { DeleteVisitButton } from '@/components/visits/DeleteVisitButton'
 import { getUserRole } from '@/lib/auth/roles'
+import { SendClinicalSummaryButton } from '@/components/visits/SendClinicalSummaryButton'
 
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
@@ -325,6 +326,18 @@ export default async function VisitDetailPage({
           )}
         </div>
       </div>
+
+      {/* Doctor/admin control: send the clinical summary (diagnosis +
+          prescription) to the patient once the record is verified. */}
+      {(userRole === 'doctor' || userRole === 'admin') && (
+        <div className="mt-4">
+          <SendClinicalSummaryButton
+            visitId={visitId}
+            sentAt={visit.clinical_summary_sent_at ?? null}
+            hasDiagnosis={Boolean(visit.diagnosis && visit.diagnosis.trim())}
+          />
+        </div>
+      )}
 
       <div className="mt-6 flex flex-col gap-4">
         <Section title="Presenting complaint">

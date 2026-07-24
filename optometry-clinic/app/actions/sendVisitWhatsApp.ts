@@ -1,11 +1,12 @@
 'use server'
 
 // app/actions/sendVisitWhatsApp.ts
-// Server action that fetches patient details and fires the WhatsApp
-// post-visit summary. Called from NewVisitForm after a successful save.
+// AUTO-SEND after a new visit is saved. Now sends the warm thank-you
+// (no clinical detail). The diagnosis + prescription is sent separately,
+// only when the doctor explicitly triggers it from the visit detail page.
 
 import { createClient } from '@/lib/supabase/server'
-import { sendVisitSummaryWhatsApp } from '@/lib/whatsapp'
+import { sendVisitThankYou } from '@/lib/whatsapp'
 
 export async function sendVisitWhatsApp(
   patientId: string,
@@ -22,14 +23,13 @@ export async function sendVisitWhatsApp(
   if (patientError || !patient) {
     return { success: false, error: 'Patient not found' }
   }
-
   if (!patient.phone) {
     return { success: false, error: 'No phone number on record' }
   }
 
   const { data: visit, error: visitError } = await supabase
     .from('visit_records')
-    .select('diagnosis, medications, follow_up_date')
+    .select('follow_up_date')
     .eq('id', visitId)
     .single()
 
@@ -37,20 +37,11 @@ export async function sendVisitWhatsApp(
     return { success: false, error: 'Visit record not found' }
   }
 
-  // Guard: don't message the patient unless there's an actual diagnosis.
-  // The template reads "you are diagnosed of {{2}}", so without a real
-  // diagnosis the message is meaningless ("diagnosed of See clinic notes").
-  // A visit saved without a diagnosis is almost always incomplete — the
-  // doctor will finish it via Edit visit, and can trigger the summary then.
-  if (!visit.diagnosis || !visit.diagnosis.trim()) {
-    return { success: false, error: 'No diagnosis recorded — summary not sent' }
-  }
-
-  return sendVisitSummaryWhatsApp({
+  // Thank-you always sends (no diagnosis gate) — it contains no clinical
+  // detail, just gratitude + appointment + review button.
+  return sendVisitThankYou({
     patientName: patient.full_name,
     patientPhone: patient.phone,
-    diagnosis: visit.diagnosis,
-    medications: visit.medications ?? [],
     followUpDate: visit.follow_up_date,
   })
 }

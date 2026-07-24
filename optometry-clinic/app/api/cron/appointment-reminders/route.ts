@@ -1,14 +1,15 @@
 // app/api/cron/appointment-reminders/route.ts
 //
-// Runs via Vercel Cron. Sends appointment reminders using an approved
-// WhatsApp template so they deliver even outside the 24-hour window.
+// Runs ONCE daily (Vercel Hobby plan fires one cron per day). In that
+// single pass it handles all three reminder windows, each guarded by its
+// own boolean column so a reminder fires exactly once per appointment:
 //
-// Two reminder windows:
-//   • Day-before  — cron at 15:00 UTC (4 PM WAT), for appointments TOMORROW
-//   • Day-of      — cron at 06:00 UTC (7 AM WAT), for appointments TODAY
+//   • Week-before — appointments ~7 days out   (reminder_sent_week_before)
+//   • Day-before  — appointments tomorrow       (reminder_sent_day_before)
+//   • Day-of      — appointments today          (reminder_sent_day_of)
 //
-// Each window is guarded by a boolean column so a reminder fires exactly
-// once per appointment, no matter how often the cron runs.
+// All three send the same approved template (olu_appointment_reminder);
+// the wording is generic enough to suit any lead time.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -21,23 +22,21 @@ export async function GET(req: NextRequest) {
   }
 
   // Service-role client — the cron has no user session, so the normal
-  // cookie-based client would be blocked by RLS and silently return
-  // zero rows. Service role bypasses RLS for this trusted server job.
+  // cookie-based client would be blocked by RLS and return zero rows.
   const supabase = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Work out today / tomorrow / day-after boundaries in UTC. The cron
-  // fires at fixed UTC times; we compare against the stored appointment
-  // timestamps which are also UTC.
+  // UTC day boundaries. Appointment timestamps are stored in UTC.
   const now = new Date()
-  const today = new Date(now)
-  today.setUTCHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
-  const dayAfter = new Date(today)
-  dayAfter.setUTCDate(dayAfter.getUTCDate() + 2)
+  const startOfToday = new Date(now); startOfToday.setUTCHours(0, 0, 0, 0)
+
+  function dayOffset(n: number) {
+    const d = new Date(startOfToday)
+    d.setUTCDate(d.getUTCDate() + n)
+    return d
+  }
 
   function fmtDate(iso: string) {
     return new Date(iso).toLocaleDateString('en-GB', {
@@ -45,86 +44,67 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  let dayOfSent = 0
-  let dayBeforeSent = 0
+  // A window is [start, end) in UTC plus the flag column that guards it.
+  const windows = [
+    { label: 'week-before', start: dayOffset(7), end: dayOffset(8), flag: 'reminder_sent_week_before' },
+    { label: 'day-before',  start: dayOffset(1), end: dayOffset(2), flag: 'reminder_sent_day_before' },
+    { label: 'day-of',      start: dayOffset(0), end: dayOffset(1), flag: 'reminder_sent_day_of' },
+  ]
+
+  const results: Record<string, number> = {}
+  const matched: Record<string, number> = {}
   const errors: string[] = []
 
-  // ── Day-of reminders: appointments TODAY, not yet reminded today ──
-  const { data: todayAppts, error: todayErr } = await supabase
-    .from('appointments')
-    .select('id, appointment_date, reminder_sent_day_of, patients(full_name, phone)')
-    .gte('appointment_date', today.toISOString())
-    .lt('appointment_date', tomorrow.toISOString())
-    .eq('reminder_sent_day_of', false)
-    .not('status', 'in', '("cancelled","completed")')
+  for (const w of windows) {
+    const { data: appts, error } = await supabase
+      .from('appointments')
+      .select(`id, appointment_date, ${w.flag}, patients(full_name, phone)`)
+      .gte('appointment_date', w.start.toISOString())
+      .lt('appointment_date', w.end.toISOString())
+      .eq(w.flag, false)
+      .not('status', 'in', '("cancelled","completed")')
 
-  if (todayErr) errors.push(`today query: ${todayErr.message}`)
-
-  for (const apt of todayAppts ?? []) {
-    const patient = (apt as any).patients
-    if (!patient?.phone) continue
-
-    const result = await sendAppointmentReminderTemplate({
-      patientPhone: patient.phone,
-      patientName: patient.full_name,
-      appointmentDate: fmtDate(apt.appointment_date),
-    })
-
-    if (result.success) {
-      await supabase
-        .from('appointments')
-        .update({ reminder_sent_day_of: true })
-        .eq('id', apt.id)
-      dayOfSent++
-    } else {
-      errors.push(`day-of ${apt.id}: ${result.error}`)
+    if (error) {
+      errors.push(`${w.label} query: ${error.message}`)
+      results[w.label] = 0
+      matched[w.label] = 0
+      continue
     }
+
+    matched[w.label] = appts?.length ?? 0
+    let sent = 0
+
+    for (const apt of (appts ?? []) as any[]) {
+      const patient = (apt as any).patients
+      if (!patient?.phone) continue
+
+      const result = await sendAppointmentReminderTemplate({
+        patientPhone: patient.phone,
+        patientName: patient.full_name,
+        appointmentDate: fmtDate(apt.appointment_date),
+      })
+
+      if (result.success) {
+        await supabase
+          .from('appointments')
+          .update({ [w.flag]: true })
+          .eq('id', apt.id)
+        sent++
+      } else {
+        errors.push(`${w.label} ${apt.id}: ${result.error}`)
+      }
+    }
+
+    results[w.label] = sent
   }
 
-  // ── Day-before reminders: appointments TOMORROW, not yet reminded ──
-  const { data: tomorrowAppts, error: tomorrowErr } = await supabase
-    .from('appointments')
-    .select('id, appointment_date, reminder_sent_day_before, patients(full_name, phone)')
-    .gte('appointment_date', tomorrow.toISOString())
-    .lt('appointment_date', dayAfter.toISOString())
-    .eq('reminder_sent_day_before', false)
-    .not('status', 'in', '("cancelled","completed")')
-
-  if (tomorrowErr) errors.push(`tomorrow query: ${tomorrowErr.message}`)
-
-  for (const apt of tomorrowAppts ?? []) {
-    const patient = (apt as any).patients
-    if (!patient?.phone) continue
-
-    const result = await sendAppointmentReminderTemplate({
-      patientPhone: patient.phone,
-      patientName: patient.full_name,
-      appointmentDate: fmtDate(apt.appointment_date),
-    })
-
-    if (result.success) {
-      await supabase
-        .from('appointments')
-        .update({ reminder_sent_day_before: true })
-        .eq('id', apt.id)
-      dayBeforeSent++
-    } else {
-      errors.push(`day-before ${apt.id}: ${result.error}`)
-    }
-  }
-
-  console.log(`Reminders sent — day-of: ${dayOfSent}, day-before: ${dayBeforeSent}`)
+  console.log('Reminders sent:', results, 'matched:', matched)
   if (errors.length) console.warn('Reminder errors:', errors)
 
   return NextResponse.json({
     success: true,
-    dayOfSent,
-    dayBeforeSent,
-    // Diagnostics — how many appointments matched each window
-    todayMatched: todayAppts?.length ?? 0,
-    tomorrowMatched: tomorrowAppts?.length ?? 0,
-    windowStart: today.toISOString(),
-    windowEnd: dayAfter.toISOString(),
+    sent: results,
+    matched,
     errors,
   })
 }

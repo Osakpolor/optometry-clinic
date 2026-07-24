@@ -2,6 +2,7 @@
 // WhatsApp Cloud API utility functions.
 // All sending goes through the clinic's registered number.
 
+import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`
@@ -266,7 +267,7 @@ export async function sendVisitSummaryWhatsApp({
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
   }
 
-  const prescriptionText = formatPrescriptions(medications)
+ const prescriptionText = humanizePrescriptionList(medications)
 
   const appointmentText = followUpDate
     ? new Date(followUpDate + 'T12:00:00').toLocaleDateString('en-GB', {

@@ -512,10 +512,8 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
         onCancel={guard.cancelLeave}
       />
 
-      {/* Reference previous visits without leaving this form */}
-      <div className="flex justify-end -mb-2">
-        <PastVisitsPanel patientId={patientId} />
-      </div>
+      {/* Past visits — floating button + slide-in drawer (self-positioning) */}
+      <PastVisitsPanel patientId={patientId} />
 
       {draftFound && (
         <div className="rounded-lg border border-brand/30 bg-brand/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

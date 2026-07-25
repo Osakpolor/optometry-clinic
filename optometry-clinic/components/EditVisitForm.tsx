@@ -396,10 +396,8 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
         onCancel={guard.cancelLeave}
       />
 
-      {/* Reference previous visits without leaving this form */}
-      <div className="flex justify-end -mb-2">
-        <PastVisitsPanel patientId={patientId} excludeVisitId={visitId} />
-      </div>
+      {/* Past visits — floating button + slide-in drawer (self-positioning) */}
+      <PastVisitsPanel patientId={patientId} excludeVisitId={visitId} />
 
       <SectionHeader title="Presenting Complaint" />
       <div className="grid grid-cols-2 gap-4">

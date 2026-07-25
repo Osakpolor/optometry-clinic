@@ -142,7 +142,7 @@ function ODOSDesktopHeader() {
   )
 }
 
-export default function NewVisitForm({ patientId, doctorId }: { patientId: string; doctorId: string }) {
+export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: { patientId: string; doctorId: string; initialAge?: string }) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -152,7 +152,7 @@ export default function NewVisitForm({ patientId, doctorId }: { patientId: strin
   const [symptoms, setSymptoms] = useState('')
   const [lastEyeExam, setLastEyeExam] = useState('')
   const [medicalHistory, setMedicalHistory] = useState('')
-  const [age, setAge] = useState('')
+  const [age, setAge] = useState(initialAge)
   const [bp, setBp] = useState('')
 
   const [hasPrx, setHasPrx] = useState('No')

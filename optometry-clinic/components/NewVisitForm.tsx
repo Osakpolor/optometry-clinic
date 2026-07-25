@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
 import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
+import { PastVisitsPanel } from '@/components/visits/PastVisitsPanel'
 
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
@@ -510,6 +511,11 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
         onDiscard={guard.confirmLeave}
         onCancel={guard.cancelLeave}
       />
+
+      {/* Reference previous visits without leaving this form */}
+      <div className="flex justify-end -mb-2">
+        <PastVisitsPanel patientId={patientId} />
+      </div>
 
       {draftFound && (
         <div className="rounded-lg border border-brand/30 bg-brand/5 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

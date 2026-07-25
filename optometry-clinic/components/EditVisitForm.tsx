@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
+import { PastVisitsPanel } from '@/components/visits/PastVisitsPanel'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
@@ -394,6 +395,11 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
         onDiscard={guard.confirmLeave}
         onCancel={guard.cancelLeave}
       />
+
+      {/* Reference previous visits without leaving this form */}
+      <div className="flex justify-end -mb-2">
+        <PastVisitsPanel patientId={patientId} excludeVisitId={visitId} />
+      </div>
 
       <SectionHeader title="Presenting Complaint" />
       <div className="grid grid-cols-2 gap-4">

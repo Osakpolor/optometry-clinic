@@ -224,6 +224,7 @@ export default async function VisitDetailPage({
   // not in the client, so the role can't be spoofed.
   const userRole = await getUserRole()
   const isAdmin = userRole === 'admin'
+  const canDelete = userRole === 'doctor' || userRole === 'admin'
 
   const { data: visit, error } = await supabase
     .from('visit_records')
@@ -311,19 +312,19 @@ export default async function VisitDetailPage({
             }}
             visit={visit}
           />
-          <Link href={`/dashboard/patients/${id}/visits/${visitId}/edit`}>
-            <Button variant="outline" size="sm">
-              Edit visit
-            </Button>
-          </Link>
-          {isAdmin && (
-            <DeleteVisitButton
-              visitId={visitId}
-              patientId={id}
-              patientName={patient?.full_name ?? 'this patient'}
-              visitDate={visitDateLabel}
-            />
-          )}
+            <Link href={`/dashboard/patients/${id}/visits/${visitId}/edit`}>
+              <Button variant="outline" size="sm">
+                Edit visit
+              </Button>
+            </Link>
+            {canDelete && (
+              <DeleteVisitButton
+                visitId={visitId}
+                patientId={id}
+                patientName={patient?.full_name ?? 'this patient'}
+                visitDate={visitDateLabel}
+              />
+            )}
         </div>
       </div>
 

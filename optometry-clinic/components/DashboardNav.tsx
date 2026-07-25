@@ -23,7 +23,11 @@ export default function DashboardNav({ isAdmin }: Props) {
   const pathname = usePathname()
 
   const links = isAdmin
-    ? [...NAV_LINKS, { href: '/dashboard/staff', label: 'Staff' }]
+    ? [
+        ...NAV_LINKS,
+        { href: '/dashboard/staff', label: 'Staff' },
+        { href: '/dashboard/audit', label: 'Audit' },
+      ]
     : NAV_LINKS
 
   return (

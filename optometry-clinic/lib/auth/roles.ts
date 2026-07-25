@@ -18,6 +18,12 @@ export function canManageVisits(role: string | null): boolean {
   return role === 'doctor' || role === 'admin'
 }
 
+// Doctors and admins can delete visit records (doctors catch their own
+// mistaken entries). Patient deletion remains admin-only below.
+export function canDeleteVisits(role: string | null): boolean {
+  return role === 'doctor' || role === 'admin'
+}
+
 export function canManageFileNumber(role: string | null): boolean {
   return role === 'admin'
 }
@@ -27,5 +33,10 @@ export function canDeletePatients(role: string | null): boolean {
 }
 
 export function canManageStaff(role: string | null): boolean {
+  return role === 'admin'
+}
+
+// Only admins can view the audit trail
+export function canViewAudit(role: string | null): boolean {
   return role === 'admin'
 }

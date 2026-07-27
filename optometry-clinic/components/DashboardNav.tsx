@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/patients', label: 'Patients' },
   { href: '/dashboard/appointments', label: 'Appointments' },
+  { href: '/dashboard/conversations', label: 'Conversations' },
 ]
 
 export default function DashboardNav({ isAdmin }: Props) {

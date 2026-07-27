@@ -23,6 +23,23 @@ export function ConversationsView({ threads }: { threads: ConversationThread[] }
   const [selected, setSelected] = useState<ConversationThread | null>(null)
   const [messages, setMessages] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [range, setRange] = useState<'today' | '7days' | 'all'>('all')
+
+  // Filter threads by last-activity date range
+  const now = new Date()
+  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0)
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const filteredThreads = threads.filter(t => {
+    const last = new Date(t.lastMessageAt)
+    if (range === 'today') return last >= startOfToday
+    if (range === '7days') return last >= sevenDaysAgo
+    return true
+  })
+  const rangeTabs: { key: 'today' | '7days' | 'all'; label: string }[] = [
+    { key: 'today', label: 'Today' },
+    { key: '7days', label: 'Last 7 days' },
+    { key: 'all', label: 'All' },
+  ]
 
   async function openThread(t: ConversationThread) {
     setSelected(t)
@@ -35,12 +52,30 @@ export function ConversationsView({ threads }: { threads: ConversationThread[] }
   return (
     <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-4 h-[calc(100vh-220px)] min-h-[400px]">
       {/* Thread list */}
-      <div className="border border-border rounded-lg overflow-y-auto bg-white">
-        {threads.length === 0 ? (
-          <p className="text-sm text-muted-foreground p-4">No conversations yet.</p>
+      <div className="border border-border rounded-lg overflow-y-auto bg-white flex flex-col">
+        {/* Date-range filter */}
+        <div className="flex gap-1 p-2 border-b bg-gray-50/60 shrink-0 sticky top-0">
+          {rangeTabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setRange(tab.key)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                range === tab.key
+                  ? 'bg-brand text-white'
+                  : 'text-muted-foreground hover:bg-gray-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {filteredThreads.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-4">
+            {threads.length === 0 ? 'No conversations yet.' : 'No conversations in this range.'}
+          </p>
         ) : (
           <ul className="divide-y">
-            {threads.map(t => (
+            {filteredThreads.map(t => (
               <li key={t.phoneNumber}>
                 <button
                   onClick={() => openThread(t)}
@@ -94,16 +129,22 @@ export function ConversationsView({ threads }: { threads: ConversationThread[] }
               ) : (
                 messages.map(m => {
                   const isUser = m.role === 'user'
+                  const isSystem = m.role === 'system'
+                  // Patient → left/white; AI (Iris) → right/green; automated
+                  // clinic message → right/blue with an "Automated" tag.
+                  const bubble = isUser
+                    ? 'bg-white border border-gray-200 rounded-tl-sm text-gray-800'
+                    : isSystem
+                    ? 'bg-blue-600 text-white rounded-tr-sm'
+                    : 'bg-green-600 text-white rounded-tr-sm'
+                  const meta = isUser ? 'text-gray-400' : isSystem ? 'text-blue-100' : 'text-green-100'
+                  const who = isUser ? 'Patient' : isSystem ? 'Automated' : 'Iris (AI)'
                   return (
                     <div key={m.id} className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
-                      <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap ${
-                        isUser
-                          ? 'bg-white border border-gray-200 rounded-tl-sm'
-                          : 'bg-green-600 text-white rounded-tr-sm'
-                      }`}>
+                      <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap ${bubble}`}>
                         <div>{m.message}</div>
-                        <div className={`text-[10px] mt-1 ${isUser ? 'text-gray-400' : 'text-green-100'}`}>
-                          {isUser ? 'Patient' : 'AI'} · {timeLabel(m.created_at)}
+                        <div className={`text-[10px] mt-1 ${meta}`}>
+                          {who} · {timeLabel(m.created_at)}
                         </div>
                       </div>
                     </div>

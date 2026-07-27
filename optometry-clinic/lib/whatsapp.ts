@@ -3,6 +3,7 @@
 // All sending goes through the clinic's registered number.
 
 import { humanizePrescriptionList } from '@/lib/humanizePrescription'
+import { createClient as createSbClient } from '@supabase/supabase-js'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`
@@ -34,6 +35,30 @@ export function formatPrescriptions(medications: any[]): string {
   const joined = lines.length > 0 ? lines.join('; ') : 'None prescribed at this visit.'
   // WhatsApp template params reject newlines, tabs, and runs of 4+ spaces
   return joined.replace(/[\n\t]+/g, ' ').replace(/\s{4,}/g, ' ').trim()
+}
+
+// ── Log an automated (system) message into whatsapp_conversations so it
+// shows in the staff Conversations viewer. Own service-role client so it
+// works in server actions AND the cron. Fire-and-forget: never blocks a send.
+export async function logWhatsAppMessage(
+  phone: string,
+  role: 'user' | 'assistant' | 'system',
+  message: string
+): Promise<void> {
+  try {
+    const to = formatNigerianPhone(phone) ?? phone.replace(/\D/g, '')
+    const sb = createSbClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    await sb.from('whatsapp_conversations').insert({
+      phone_number: to,
+      role,
+      message,
+    })
+  } catch (err) {
+    console.error('logWhatsAppMessage failed (non-blocking):', err)
+  }
 }
 
 // ── Core send function ────────────────────────────────────────────────────────
@@ -92,7 +117,7 @@ export async function sendBookingConfirmation({
   return sendWhatsAppMessage(to, message)
 }
 
-// ── Appointment reminder ──────────────────────────────────────────────────────
+// ── Appointment reminder (free-form, legacy — kept for compatibility) ─────────
 
 export async function sendAppointmentReminder({
   to,
@@ -116,19 +141,10 @@ export async function sendAppointmentReminder({
   return sendWhatsAppMessage(to, message)
 }
 
-
-// ── ADD THIS FUNCTION to lib/whatsapp.ts ──
-// (paste it alongside the other functions, e.g. after sendAppointmentReminder)
-//
-// Sends the appointment reminder as an APPROVED TEMPLATE, so it delivers
-// reliably even to patients who haven't messaged the clinic in 24 hours.
-// This is different from sendAppointmentReminder (free-form) which only
-// works inside an open conversation window.
-//
-// Template: olu_appointment_reminder
-// {{1}} = patient name
-// {{2}} = appointment date (formatted)
-// {{3}} = clinic phone
+// ── Appointment reminder TEMPLATE — Iris-branded (olu_reminder_iris) ──────────
+// Delivers reliably outside the 24h window. Two body params:
+//   {{1}} = patient name
+//   {{2}} = appointment date (formatted)
 
 export async function sendAppointmentReminderTemplate({
   patientPhone,
@@ -149,7 +165,7 @@ export async function sendAppointmentReminderTemplate({
     to,
     type: 'template',
     template: {
-      name: 'olu_appointment_reminder',
+      name: 'olu_reminder_iris',
       language: { code: 'en' },
       components: [
         {
@@ -157,7 +173,6 @@ export async function sendAppointmentReminderTemplate({
           parameters: [
             { type: 'text', text: patientName },
             { type: 'text', text: appointmentDate },
-            { type: 'text', text: '09166015438' },
           ],
         },
       ],
@@ -178,6 +193,12 @@ export async function sendAppointmentReminderTemplate({
       console.error('sendAppointmentReminderTemplate error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    await logWhatsAppMessage(
+      patientPhone,
+      'system',
+      `[Reminder] Hello ${patientName}, I'm Iris. A friendly reminder of your ` +
+      `next appointment at Olu Eye Clinic on ${appointmentDate}.`
+    )
     return { success: true }
   } catch (err: any) {
     console.error('sendAppointmentReminderTemplate network error:', err)
@@ -185,6 +206,11 @@ export async function sendAppointmentReminderTemplate({
   }
 }
 
+// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v2) ─────────────────────
+// No button; inline review link. Three body params:
+//   {{1}} = patient name
+//   {{2}} = next appointment (or fallback text)
+//   {{3}} = review link
 
 export async function sendVisitThankYou({
   patientName,
@@ -206,12 +232,14 @@ export async function sendVisitThankYou({
       })
     : 'to be scheduled — please contact the clinic'
 
+  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
+
   const body = {
     messaging_product: 'whatsapp',
     to,
     type: 'template',
     template: {
-      name: 'olu_visit_thankyou',
+      name: 'olu_visit_thankyou_v2',
       language: { code: 'en' },
       components: [
         {
@@ -219,6 +247,7 @@ export async function sendVisitThankYou({
           parameters: [
             { type: 'text', text: patientName },
             { type: 'text', text: appointmentText },
+            { type: 'text', text: reviewLink },
           ],
         },
       ],
@@ -239,6 +268,12 @@ export async function sendVisitThankYou({
       console.error('sendVisitThankYou error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    await logWhatsAppMessage(
+      patientPhone,
+      'system',
+      `[Thank-you] Dear ${patientName}, thank you for choosing Olu Eye Clinic. ` +
+      `Your next appointment is ${appointmentText}. Review: ${reviewLink}`
+    )
     return { success: true }
   } catch (err: any) {
     console.error('sendVisitThankYou network error:', err)
@@ -246,8 +281,8 @@ export async function sendVisitThankYou({
   }
 }
 
-
-// ── Post-visit summary template message ──────────────────────────────────────
+// ── Post-visit clinical summary TEMPLATE (olu_eye_clinic_visit_summary_v2) ─────
+// Doctor-triggered. Diagnosis + humanized prescription.
 
 export async function sendVisitSummaryWhatsApp({
   patientName,
@@ -267,7 +302,7 @@ export async function sendVisitSummaryWhatsApp({
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
   }
 
- const prescriptionText = humanizePrescriptionList(medications)
+  const prescriptionText = humanizePrescriptionList(medications)
 
   const appointmentText = followUpDate
     ? new Date(followUpDate + 'T12:00:00').toLocaleDateString('en-GB', {
@@ -278,7 +313,7 @@ export async function sendVisitSummaryWhatsApp({
     : 'To be scheduled — please contact the clinic'
 
   const diagnosisText = diagnosis?.trim() || 'See clinic notes'
-  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com'
+  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
 
   const body = {
     messaging_product: 'whatsapp',
@@ -319,6 +354,12 @@ export async function sendVisitSummaryWhatsApp({
       console.error('WhatsApp sendVisitSummaryWhatsApp error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API request failed' }
     }
+    await logWhatsAppMessage(
+      patientPhone,
+      'system',
+      `[Visit summary] Diagnosis: ${diagnosisText}. ` +
+      `Treatment: ${prescriptionText}. Next appointment: ${appointmentText}.`
+    )
     return { success: true }
   } catch (err: any) {
     console.error('sendVisitSummaryWhatsApp network error:', err)

@@ -120,6 +120,43 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: true })
       .limit(20)
 
+    // ── Compute greeting flags for Iris ──────────────────────
+    // We base these on Iris's OWN past replies (role: 'assistant'), not on the
+    // user's messages. That way a first-ever burst of 2-3 quick messages still
+    // counts as one first-ever contact (there are no prior assistant replies yet),
+    // instead of the later messages cancelling the intro.
+    //
+    // isFirstEverContact: Iris has never replied to this number before.
+    // isFirstToday:       Iris has replied before, but not yet today (WAT).
+
+    // Start of today in WAT (UTC+1), expressed as a UTC instant.
+    const watNow = new Date(Date.now() + 60 * 60 * 1000) // shift to WAT wall-clock
+    const startOfTodayWatUtc = new Date(
+      Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate(), 0, 0, 0)
+        - 60 * 60 * 1000, // pull WAT-midnight back to its real UTC instant
+    ).toISOString()
+
+    const { count: priorAssistantEver } = await supabase
+      .from('whatsapp_conversations')
+      .select('*', { count: 'exact', head: true })
+      .eq('phone_number', fromNumber)
+      .eq('role', 'assistant')
+      .lt('created_at', receivedAt)
+
+    const isFirstEverContact = (priorAssistantEver ?? 0) === 0
+
+    const { count: priorAssistantToday } = await supabase
+      .from('whatsapp_conversations')
+      .select('*', { count: 'exact', head: true })
+      .eq('phone_number', fromNumber)
+      .eq('role', 'assistant')
+      .gte('created_at', startOfTodayWatUtc)
+      .lt('created_at', receivedAt)
+
+    // First-ever takes precedence, so isFirstToday is only true when it's NOT
+    // their first ever contact.
+    const isFirstToday = !isFirstEverContact && (priorAssistantToday ?? 0) === 0
+
     // ── Generate Claude reply ────────────────────────────────
     const { reply, booking } = await generateClaudeReply({
       fromNumber,
@@ -129,6 +166,8 @@ export async function POST(req: NextRequest) {
       recentVisit,
       allVisits,
       conversationHistory: history ?? [],
+      isFirstEverContact,
+      isFirstToday,
     })
 
     // ── Save Claude's reply (clean version, no hidden block) ──

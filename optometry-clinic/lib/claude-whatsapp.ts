@@ -3,6 +3,13 @@ import { loadClinicPrompt } from './prompt-loader'
 type ReplyContext = {
   fromNumber: string
   messageText: string
+  // ── Greeting flags (computed in the webhook, where the DB lives) ──
+  // isFirstEverContact: true ONLY the very first time this number ever messages us.
+  // isFirstToday: true if this is their first message today (but not their first ever).
+  // If the webhook doesn't set these yet, they arrive undefined → treated as false,
+  // which just means Iris gives no greeting and answers normally. Nothing breaks.
+  isFirstEverContact?: boolean
+  isFirstToday?: boolean
   patient: {
     id: string
     full_name: string
@@ -45,7 +52,15 @@ export async function generateClaudeReply(ctx: ReplyContext): Promise<{
   reply: string
   booking: { name: string; phone: string; date: string; time: string; service: string } | null
 }> {
-  const { messageText, patient, lead, recentVisit, allVisits, conversationHistory } = ctx
+  const {
+    messageText,
+    patient,
+    lead,
+    allVisits,
+    conversationHistory,
+    isFirstEverContact,
+    isFirstToday,
+  } = ctx
 
   // ── Build patient context string ─────────────────────────
   let patientContext = ''
@@ -94,8 +109,6 @@ UNKNOWN CONTACT:
   }
 
   // ── Determine session context ────────────────────────────
-  const isFirstMessage = conversationHistory.length === 0
-
   // Nigeria time (WAT = UTC+1)
   const now = new Date()
   const hour = new Date(now.getTime() + 60 * 60 * 1000).getUTCHours()
@@ -111,7 +124,8 @@ UNKNOWN CONTACT:
     clinic_services: 'Eye exams, glasses fitting, contact lens fitting, follow-up visits',
     clinic_hours: 'Monday–Saturday, 8am–4pm',
     patient_context: patientContext,
-    is_first_message: isFirstMessage ? 'true' : 'false',
+    is_first_ever_contact: isFirstEverContact ? 'true' : 'false',
+    is_first_today: isFirstToday ? 'true' : 'false',
     time_of_day: timeOfDay,
     patient_name: patientName,
   })

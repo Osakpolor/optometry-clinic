@@ -6,7 +6,7 @@ import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
-const API_URL = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`
+const API_URL = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -206,11 +206,14 @@ export async function sendAppointmentReminderTemplate({
   }
 }
 
-// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v2) ─────────────────────
-// No button; inline review link. Three body params:
+// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v4) ─────────────────────
+// PURE UTILITY. No button, no review link — purely transactional so Meta keeps
+// it as Utility (renders cleanly, appointment date visible, no "Read more",
+// cheaper per send). The review ask now lives with Iris, who offers it warmly
+// and conversationally in free-form chat (no template category, no rendering
+// problems). Two body params:
 //   {{1}} = patient name
 //   {{2}} = next appointment (or fallback text)
-//   {{3}} = review link
 
 export async function sendVisitThankYou({
   patientName,
@@ -232,14 +235,12 @@ export async function sendVisitThankYou({
       })
     : 'to be scheduled — please contact the clinic'
 
-  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
-
   const body = {
     messaging_product: 'whatsapp',
     to,
     type: 'template',
     template: {
-      name: 'olu_visit_thankyou_v2',
+      name: 'olu_visit_thankyou_v4',
       language: { code: 'en' },
       components: [
         {
@@ -247,7 +248,6 @@ export async function sendVisitThankYou({
           parameters: [
             { type: 'text', text: patientName },
             { type: 'text', text: appointmentText },
-            { type: 'text', text: reviewLink },
           ],
         },
       ],
@@ -272,7 +272,7 @@ export async function sendVisitThankYou({
       patientPhone,
       'system',
       `[Thank-you] Dear ${patientName}, thank you for choosing Olu Eye Clinic. ` +
-      `Your next appointment is ${appointmentText}. Review: ${reviewLink}`
+      `Your next appointment is ${appointmentText}.`
     )
     return { success: true }
   } catch (err: any) {

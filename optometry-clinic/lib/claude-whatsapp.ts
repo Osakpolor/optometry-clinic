@@ -131,12 +131,18 @@ UNKNOWN CONTACT:
   })
 
   // ── Build conversation history for Claude ────────────────
-  // Pass previous messages so Claude remembers the full session
+  // Only real dialogue turns. Drop 'system' rows (automated sends, delivery-
+  // failure logs, thank-you replicas) and anything with empty content —
+  // otherwise a logged system line becomes an invalid messages[] entry and the
+  // API rejects the whole request ("messages.0 ... content" error). This also
+  // keeps the array starting with a real patient 'user' turn.
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
-    ...conversationHistory.map(h => ({
-      role: h.role as 'user' | 'assistant',
-      content: h.message,
-    })),
+    ...conversationHistory
+      .filter(h => (h.role === 'user' || h.role === 'assistant') && h.message?.trim())
+      .map(h => ({
+        role: h.role as 'user' | 'assistant',
+        content: h.message,
+      })),
     // Current incoming message
     {
       role: 'user' as const,

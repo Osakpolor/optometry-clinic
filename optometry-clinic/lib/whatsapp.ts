@@ -114,7 +114,12 @@ export async function sendBookingConfirmation({
     (details ? `Your appointment details: ${details}. ` : '') +
     `A member of our team will contact you shortly to confirm. ` +
     `For enquiries call 09166015438. - OluEyeClnc`
-  return sendWhatsAppMessage(to, message)
+
+  const result = await sendWhatsAppMessage(to, message)
+  if (result.success) {
+    await logWhatsAppMessage(to, 'system', `[Booking confirmation] ${message}`)
+  }
+  return result
 }
 
 // ── Appointment reminder (free-form, legacy — kept for compatibility) ─────────
@@ -229,18 +234,30 @@ export async function sendVisitThankYou({
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
   }
 
+  // Format as "July 28th, 2026" (month name, ordinal day, year)
+  function ordinal(n: number): string {
+    const s = ['th', 'st', 'nd', 'rd']
+    const v = n % 100
+    return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
+  }
+  function formatLongDate(dateStr: string): string {
+    const d = new Date(dateStr + 'T12:00:00')
+    const month = d.toLocaleDateString('en-US', { month: 'long' })
+    return `${month} ${ordinal(d.getDate())}, ${d.getFullYear()}`
+  }
+
   const appointmentText = followUpDate
-    ? new Date(followUpDate + 'T12:00:00').toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'long', year: 'numeric',
-      })
+    ? formatLongDate(followUpDate)
     : 'to be scheduled — please contact the clinic'
+
+  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
 
   const body = {
     messaging_product: 'whatsapp',
     to,
     type: 'template',
     template: {
-      name: 'olu_visit_thankyou_v4',
+      name: 'olu_visit_thankyou_v5',
       language: { code: 'en' },
       components: [
         {
@@ -248,6 +265,7 @@ export async function sendVisitThankYou({
           parameters: [
             { type: 'text', text: patientName },
             { type: 'text', text: appointmentText },
+            { type: 'text', text: reviewLink },
           ],
         },
       ],
@@ -271,8 +289,8 @@ export async function sendVisitThankYou({
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `[Thank-you] Dear ${patientName}, thank you for choosing Olu Eye Clinic. ` +
-      `Your next appointment is ${appointmentText}.`
+      `[Thank-you] Dear ${patientName}, thank you for trusting us with your eye health. ` +
+      `Your next appointment is on ${appointmentText}. Review: ${reviewLink}`
     )
     return { success: true }
   } catch (err: any) {

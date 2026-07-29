@@ -25,6 +25,35 @@ export async function POST(req: NextRequest) {
     const value    = changes?.value
     const messages = value?.messages
 
+    // ── Delivery status callbacks (sent / delivered / read / FAILED) ──
+    // Meta reports these asynchronously AFTER accepting a send. A message can
+    // be accepted by the API yet silently dropped at delivery (e.g. error
+    // 131049 — per-user marketing template limit). Without this block those
+    // failures are invisible. We log failures to the console (Vercel logs)
+    // AND into whatsapp_conversations so they show in the staff viewer.
+    const statuses = value?.statuses
+    if (statuses && statuses.length > 0) {
+      for (const s of statuses) {
+        if (s.status === 'failed') {
+          const err = s.errors?.[0]
+          const detail =
+            `error ${err?.code ?? '?'}: ${err?.title ?? 'unknown'}` +
+            (err?.error_data?.details ? ` — ${err.error_data.details}` : '')
+          console.error(`❌ WhatsApp delivery FAILED to ${s.recipient_id}: ${detail}`)
+
+          const sb = await createClient()
+          await sb.from('whatsapp_conversations').insert({
+            phone_number: s.recipient_id,
+            role: 'system',
+            message: `⚠️ [Delivery failed] ${detail}`,
+          })
+        } else {
+          console.log(`📬 WhatsApp status: ${s.status} → ${s.recipient_id}`)
+        }
+      }
+      return NextResponse.json({ status: 'ok' })
+    }
+
     if (!messages || messages.length === 0) {
       return NextResponse.json({ status: 'ok' })
     }

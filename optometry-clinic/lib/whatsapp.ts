@@ -37,9 +37,11 @@ export function formatPrescriptions(medications: any[]): string {
   return joined.replace(/[\n\t]+/g, ' ').replace(/\s{4,}/g, ' ').trim()
 }
 
-// ── Log an automated (system) message into whatsapp_conversations so it
-// shows in the staff Conversations viewer. Own service-role client so it
-// works in server actions AND the cron. Fire-and-forget: never blocks a send.
+// ── Log a message into whatsapp_conversations so it shows in the staff
+// Conversations viewer. We log the FULL human-readable text — exactly what
+// the patient receives on WhatsApp (line breaks included; the viewer renders
+// them with whitespace-pre-wrap). Own service-role client so it works in
+// server actions AND the cron. Fire-and-forget: never blocks a real send.
 export async function logWhatsAppMessage(
   phone: string,
   role: 'user' | 'assistant' | 'system',
@@ -117,7 +119,8 @@ export async function sendBookingConfirmation({
 
   const result = await sendWhatsAppMessage(to, message)
   if (result.success) {
-    await logWhatsAppMessage(to, 'system', `[Booking confirmation] ${message}`)
+    // Log exactly what the patient received
+    await logWhatsAppMessage(to, 'system', message)
   }
   return result
 }
@@ -198,11 +201,15 @@ export async function sendAppointmentReminderTemplate({
       console.error('sendAppointmentReminderTemplate error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    // Log the full human-readable message exactly as the olu_reminder_iris
+    // template renders it on the patient's phone.
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `[Reminder] Hello ${patientName}, I'm Iris. A friendly reminder of your ` +
-      `next appointment at Olu Eye Clinic on ${appointmentDate}.`
+      `Hello ${patientName}, I'm Iris, Olu Eye Clinic's AI assistant. ` +
+      `Thank you for trusting us with your eye health. ` +
+      `This is a friendly reminder of your next appointment on ${appointmentDate}. ` +
+      `We look forward to seeing you. Enjoy the rest of your day!`
     )
     return { success: true }
   } catch (err: any) {
@@ -211,14 +218,13 @@ export async function sendAppointmentReminderTemplate({
   }
 }
 
-// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v4) ─────────────────────
-// PURE UTILITY. No button, no review link — purely transactional so Meta keeps
-// it as Utility (renders cleanly, appointment date visible, no "Read more",
-// cheaper per send). The review ask now lives with Iris, who offers it warmly
-// and conversationally in free-form chat (no template category, no rendering
-// problems). Two body params:
+// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v5) ─────────────────────
+// MARKETING category (Meta reclassified it because of the review link — we're
+// running this deliberately to measure review uptake; may revisit later).
+// Paragraph-spaced body, inline review link, NO button. Three body params:
 //   {{1}} = patient name
-//   {{2}} = next appointment (or fallback text)
+//   {{2}} = next appointment date, "July 28th, 2026" style (or fallback text)
+//   {{3}} = review link
 
 export async function sendVisitThankYou({
   patientName,
@@ -286,11 +292,18 @@ export async function sendVisitThankYou({
       console.error('sendVisitThankYou error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    // Log the full human-readable message exactly as the olu_visit_thankyou_v5
+    // template renders it on the patient's phone (paragraph spacing included —
+    // newlines are fine here, this is our own DB, not a template param).
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `[Thank-you] Dear ${patientName}, thank you for trusting us with your eye health. ` +
-      `Your next appointment is on ${appointmentText}. Review: ${reviewLink}`
+      `Dear ${patientName},\n\n` +
+      `Thank you for trusting us with your eye health.\n\n` +
+      `*Your next appointment is on ${appointmentText}.*\n\n` +
+      `We'd love to hear about your experience at the clinic! Please leave us a review: ${reviewLink}\n\n` +
+      `Enjoy the rest of your day!\n\n` +
+      `Olu Eye Clinic.`
     )
     return { success: true }
   } catch (err: any) {
@@ -372,11 +385,19 @@ export async function sendVisitSummaryWhatsApp({
       console.error('WhatsApp sendVisitSummaryWhatsApp error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API request failed' }
     }
+    // Log the full human-readable message exactly as the visit-summary template
+    // renders it on the patient's phone.
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `[Visit summary] Diagnosis: ${diagnosisText}. ` +
-      `Treatment: ${prescriptionText}. Next appointment: ${appointmentText}.`
+      `*Olu Eye Clinic — Visit Summary*\n\n` +
+      `Dear ${patientName}, you are diagnosed of ${diagnosisText}.\n` +
+      `Please, endeavour to keep to your treatment regimen religiously.\n\n` +
+      `*Treatment Regimen:*\n${prescriptionText}\n\n` +
+      `*Next Appointment:* ${appointmentText}\n\n` +
+      `Thanks for choosing OLU EYE CLINIC.\n\n` +
+      `We'd love to hear about your experience! Please leave us a review: ${reviewLink}\n\n` +
+      `God bless you. - Olu Eye Clinic Team`
     )
     return { success: true }
   } catch (err: any) {

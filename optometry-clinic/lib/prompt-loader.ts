@@ -8,7 +8,8 @@ type ClinicConfig = {
   clinic_services: string
   clinic_hours: string
   patient_context: string
-  is_first_message: string
+  is_first_ever_contact: string
+  is_first_today: string
   time_of_day: string
   patient_name: string
 }
@@ -36,7 +37,8 @@ export async function loadClinicPrompt(
     .replace(/{{clinic_services}}/g, config.clinic_services)
     .replace(/{{clinic_hours}}/g, config.clinic_hours)
     .replace(/{{patient_context}}/g, config.patient_context)
-    .replace(/{{is_first_message}}/g, config.is_first_message)
+    .replace(/{{is_first_ever_contact}}/g, config.is_first_ever_contact)
+    .replace(/{{is_first_today}}/g, config.is_first_today)
     .replace(/{{time_of_day}}/g, config.time_of_day)
     .replace(/{{patient_name}}/g, config.patient_name)
 

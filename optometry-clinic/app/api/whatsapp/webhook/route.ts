@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
 import { getPhoneVariants } from '@/lib/phone-utils'
+import { getSettings, isAllowedRecipient } from '@/lib/settings'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -81,11 +82,28 @@ export async function POST(req: NextRequest) {
       }, { onConflict: 'phone_number' })
 
     // ── Save incoming message ────────────────────────────────
+    // Always logged (even when Iris is paused) so staff still see inbound.
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'user',
       message: messageText,
     })
+
+    // ── Messaging controls: should Iris reply at all? ────────
+    // ai_enabled=false  → Iris paused for everyone.
+    // test_mode=true    → Iris only replies to numbers on the allowlist;
+    //                     real patients messaging during a test window get
+    //                     NO reply, so keep test windows short + deliberate.
+    // We've already logged the inbound above, so nothing is lost — Iris just
+    // stays silent.
+    const settings = await getSettings()
+    if (!settings.ai_enabled || !isAllowedRecipient(fromNumber, settings)) {
+      console.log(
+        `🤖 Iris reply suppressed for ${fromNumber} ` +
+        `(ai_enabled=${settings.ai_enabled}, test_mode=${settings.test_mode})`
+      )
+      return NextResponse.json({ status: 'ok' })
+    }
 
     // ── Wait 6 seconds for more messages ────────────────────
     await new Promise(resolve => setTimeout(resolve, 6000))
@@ -140,14 +158,22 @@ export async function POST(req: NextRequest) {
       recentVisit = allVisits[0] ?? null
     }
 
-    // ── Load conversation history ────────────────────────────
-    const { data: history } = await supabase
+    // ── Load conversation history (cross-session memory) ─────
+    // Previously capped to the last 2 hours, so Iris forgot everything older.
+    // Now we load the 30 most-recent DIALOGUE turns (user + assistant) across
+    // all time, so Iris remembers past conversations — days or weeks back.
+    // We fetch newest-first then reverse to chronological order. 'system' rows
+    // (automated sends, delivery-failure logs) are excluded here AND again in
+    // claude-whatsapp.ts, so they never pollute Claude's memory.
+    const { data: historyDesc } = await supabase
       .from('whatsapp_conversations')
       .select('role, message, created_at')
       .eq('phone_number', fromNumber)
-      .gte('created_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true })
-      .limit(20)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    const history = (historyDesc ?? []).slice().reverse()
 
     // ── Compute greeting flags for Iris ──────────────────────
     // We base these on Iris's OWN past replies (role: 'assistant'), not on the

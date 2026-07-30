@@ -4,6 +4,7 @@
 
 import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 import { createClient as createSbClient } from '@supabase/supabase-js'
+import { getSettings, isAllowedRecipient } from '@/lib/settings'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`
@@ -110,6 +111,13 @@ export async function sendBookingConfirmation({
   date?: string
   time?: string
 }): Promise<{ success: boolean; error?: string }> {
+  // Test-mode guard: during a test window, only allowlisted numbers get anything.
+  const settings = await getSettings()
+  if (!isAllowedRecipient(to, settings)) {
+    console.log(`🔇 sendBookingConfirmation skipped for ${to} (test mode)`)
+    return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
+  }
+
   const details = [service, date, time].filter(Boolean).join(', ')
   const message =
     `Hello ${fullName}, thank you for booking with Olu Eye Clinic! ` +
@@ -166,6 +174,18 @@ export async function sendAppointmentReminderTemplate({
   const to = formatNigerianPhone(patientPhone)
   if (!to) {
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
+  }
+
+  // Messaging controls: automated sends can be paused globally, and in test
+  // mode only allowlisted numbers receive anything.
+  const settings = await getSettings()
+  if (!settings.automated_sends_enabled) {
+    console.log(`🔇 Reminder skipped for ${patientPhone} (automated sends disabled)`)
+    return { success: false, error: 'Automated sends are disabled' }
+  }
+  if (!isAllowedRecipient(patientPhone, settings)) {
+    console.log(`🔇 Reminder skipped for ${patientPhone} (test mode)`)
+    return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
   }
 
   const body = {
@@ -238,6 +258,18 @@ export async function sendVisitThankYou({
   const to = formatNigerianPhone(patientPhone)
   if (!to) {
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
+  }
+
+  // Messaging controls: automated sends can be paused globally, and in test
+  // mode only allowlisted numbers receive anything.
+  const settings = await getSettings()
+  if (!settings.automated_sends_enabled) {
+    console.log(`🔇 Thank-you skipped for ${patientPhone} (automated sends disabled)`)
+    return { success: false, error: 'Automated sends are disabled' }
+  }
+  if (!isAllowedRecipient(patientPhone, settings)) {
+    console.log(`🔇 Thank-you skipped for ${patientPhone} (test mode)`)
+    return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
   }
 
   // Format as "July 28th, 2026" (month name, ordinal day, year)
@@ -331,6 +363,16 @@ export async function sendVisitSummaryWhatsApp({
   const to = formatNigerianPhone(patientPhone)
   if (!to) {
     return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
+  }
+
+  // Messaging control: this one is DOCTOR-TRIGGERED (not automated), so it is
+  // NOT gated by automated_sends_enabled — a doctor can always send it. But the
+  // test-mode allowlist still applies, so a test window never messages a real
+  // patient by accident.
+  const settings = await getSettings()
+  if (!isAllowedRecipient(patientPhone, settings)) {
+    console.log(`🔇 Visit summary skipped for ${patientPhone} (test mode)`)
+    return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
   }
 
   const prescriptionText = humanizePrescriptionList(medications)

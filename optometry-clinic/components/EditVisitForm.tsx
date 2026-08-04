@@ -17,7 +17,18 @@ type Drug = { type: string; name: string; qty: string; freq: string; duration: s
 
 function strip(val: string | null | undefined, suffix: string): string {
   if (!val) return ''
-  return val.toString().replace(suffix, '').replace('6/', '').replace(/^N/, '').trim()
+  let s = val.toString().trim()
+  if (suffix && s.endsWith(suffix)) s = s.slice(0, -suffix.length).trim()
+  return s
+}
+
+// Near-vision fields show a fixed "N" adornment and re-add "N" on save, so
+// their STORED value (e.g. "N18") must lose the leading "N" on load. This is
+// the ONLY field group that should lose a leading "N" — never far, pinhole, or
+// cupping, whose real values may legitimately start with N (e.g. "NI", "NIL").
+function stripNear(val: string | null | undefined): string {
+  if (!val) return ''
+  return val.toString().trim().replace(/^N\s*/i, '').trim()
 }
 
 function SectionHeader({ title }: { title: string }) {
@@ -176,14 +187,14 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   // Strip the old 6/ prefix on load since the new form no longer uses it
   const [vaFarOD, setVaFarOD] = useState(strip(e.va_far_od, ''))
   const [vaFarOS, setVaFarOS] = useState(strip(e.va_far_os, ''))
-  const [vaNearOD, setVaNearOD] = useState(strip(e.va_near_od, ''))
-  const [vaNearOS, setVaNearOS] = useState(strip(e.va_near_os, ''))
+  const [vaNearOD, setVaNearOD] = useState(stripNear(e.va_near_od))
+  const [vaNearOS, setVaNearOS] = useState(stripNear(e.va_near_os))
   const [vaPinholeOD, setVaPinholeOD] = useState(strip(e.va_pinhole_od, ''))
   const [vaPinholeOS, setVaPinholeOS] = useState(strip(e.va_pinhole_os, ''))
   const [pxVaFarOD, setPxVaFarOD] = useState(strip(e.px_va_far_od, ''))
   const [pxVaFarOS, setPxVaFarOS] = useState(strip(e.px_va_far_os, ''))
-  const [pxVaNearOD, setPxVaNearOD] = useState(strip(e.px_va_near_od, ''))
-  const [pxVaNearOS, setPxVaNearOS] = useState(strip(e.px_va_near_os, ''))
+  const [pxVaNearOD, setPxVaNearOD] = useState(stripNear(e.px_va_near_od))
+  const [pxVaNearOS, setPxVaNearOS] = useState(stripNear(e.px_va_near_os))
 
   const [sphAutoOD, setSphAutoOD] = useState(r.sph_auto_od ?? '')
   const [cylAutoOD, setCylAutoOD] = useState(r.cyl_auto_od ?? '')
@@ -234,8 +245,8 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [addFinalOS, setAddFinalOS] = useState(r.add_final_os ?? '')
   const [finalVaFarOD, setFinalVaFarOD] = useState(strip(e.final_va_far_od, ''))
   const [finalVaFarOS, setFinalVaFarOS] = useState(strip(e.final_va_far_os, ''))
-  const [finalVaNearOD, setFinalVaNearOD] = useState(strip(e.final_va_near_od, ''))
-  const [finalVaNearOS, setFinalVaNearOS] = useState(strip(e.final_va_near_os, ''))
+  const [finalVaNearOD, setFinalVaNearOD] = useState(stripNear(e.final_va_near_od))
+  const [finalVaNearOS, setFinalVaNearOS] = useState(stripNear(e.final_va_near_os))
 
   const [diagnosis, setDiagnosis] = useState(visit.diagnosis ?? '')
   // Migrate existing meds — add qty/duration defaulting to '' if not present

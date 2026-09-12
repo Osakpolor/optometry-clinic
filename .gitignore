@@ -1,0 +1,4 @@
+other files & tokens/
+*.pem
+.env
+.env.*

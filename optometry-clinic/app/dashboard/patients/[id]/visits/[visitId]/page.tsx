@@ -84,7 +84,6 @@ function VisualAcuitySection({ e }: { e: Record<string, any> }) {
     ['Pin hole', e.va_pinhole_od, e.va_pinhole_os],
     ['@Far (with Rx)', e.px_va_far_od, e.px_va_far_os],
     ['@Near (with Rx)', e.px_va_near_od, e.px_va_near_os],
-    ['IOP', e.iop_od, e.iop_os],
   ].filter(([, a, b]) => a || b) as [string, string?, string?][]
   if (rows.length === 0) return null
   return (
@@ -97,6 +96,50 @@ function VisualAcuitySection({ e }: { e: Record<string, any> }) {
           {e.va_chart && <span>Chart: {e.va_chart}</span>}
         </div>
       )}
+    </Section>
+  )
+}
+
+// Tonometry, pachymetry and A-scan. e.iop_od/e.iop_os are the original IOP keys
+// (every visit saved before this change), now shown as "Estimated I.O.P".
+function TonometrySection({ e, ant }: { e: Record<string, any>; ant: Record<string, any> }) {
+  // Legacy visits kept tonometry as free text on anterior_segment
+  if (isLegacyEyeTest(e) && ant.tonometry) {
+    return (
+      <Section title="Tonometry (I.O.P)">
+        <Row label="Tonometry (IOP)" value={ant.tonometry} />
+      </Section>
+    )
+  }
+  const rows: [string, string?, string?][] = [
+    ['Estimated I.O.P', e.iop_od, e.iop_os],
+    ['Actual I.O.P', e.iop_actual_od, e.iop_actual_os],
+  ].filter(([, a, b]) => a || b) as [string, string?, string?][]
+  if (rows.length === 0) return null
+  return (
+    <Section title="Tonometry (I.O.P)">
+      <EyeGridHeader />
+      {rows.map(([label, od, os]) => <EyeRow key={label} label={label} od={od} os={os} />)}
+    </Section>
+  )
+}
+
+function PachymetrySection({ e }: { e: Record<string, any> }) {
+  if (!e.pachy_od && !e.pachy_os) return null
+  return (
+    <Section title="Pachymetry">
+      <EyeGridHeader />
+      <EyeRow label="Thickness" od={e.pachy_od} os={e.pachy_os} />
+    </Section>
+  )
+}
+
+function AScanSection({ e }: { e: Record<string, any> }) {
+  if (!e.ascan_od && !e.ascan_os) return null
+  return (
+    <Section title="A-Scan (axial length)">
+      <EyeGridHeader />
+      <EyeRow label="Axial length" od={e.ascan_od} os={e.ascan_os} />
     </Section>
   )
 }
@@ -149,7 +192,7 @@ function AnteriorSection({ ant }: { ant: Record<string, any> }) {
   if (isLegacyAnterior(ant)) {
     return (
       <Section title="External exam (anterior segment)">
-        {ant.tonometry && <Row label="Tonometry (IOP)" value={ant.tonometry} />}
+        {/* tonometry now renders in TonometrySection above, not here */}
         {ant.external_exam && <Row label="External exam" value={ant.external_exam} />}
         {ant.internal_exam && <Row label="Internal exam" value={ant.internal_exam} />}
       </Section>
@@ -350,6 +393,9 @@ export default async function VisitDetailPage({
         </Section>
 
         <VisualAcuitySection e={e} />
+        <TonometrySection e={e} ant={ant} />
+        <PachymetrySection e={e} />
+        <AScanSection e={e} />
         <RefractionSection r={r} />
         <AnteriorSection ant={ant} />
         <PosteriorSection post={post} />

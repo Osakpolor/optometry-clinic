@@ -186,8 +186,17 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
   const [cylAutoOS, setCylAutoOS] = useState('')
   const [axisAutoOS, setAxisAutoOS] = useState('')
 
+  // Tonometry (I.O.P) — iopOD/iopOS are the original IOP fields, now labelled "Estimated"
   const [iopOD, setIopOD] = useState('')
   const [iopOS, setIopOS] = useState('')
+  const [iopActualOD, setIopActualOD] = useState('')
+  const [iopActualOS, setIopActualOS] = useState('')
+
+  const [pachyOD, setPachyOD] = useState('')
+  const [pachyOS, setPachyOS] = useState('')
+
+  const [ascanOD, setAscanOD] = useState('')
+  const [ascanOS, setAscanOS] = useState('')
 
   // Default to NAD — "No Abnormality Detected" is the standard clinical default
   const [anteriorOD, setAnteriorOD] = useState('NAD')
@@ -261,7 +270,9 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
       vaPinholeOD, vaPinholeOS,
       pxVaFarOD, pxVaFarOS, pxVaNearOD, pxVaNearOS,
       sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
-      iopOD, iopOS, anteriorOD, anteriorOS,
+      iopOD, iopOS, iopActualOD, iopActualOS,
+      pachyOD, pachyOS, ascanOD, ascanOS,
+      anteriorOD, anteriorOS,
       discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
       sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
       retVaFarOD, retVaFarOS,
@@ -289,6 +300,9 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
     setSphAutoOD(d.sphAutoOD ?? ''); setCylAutoOD(d.cylAutoOD ?? ''); setAxisAutoOD(d.axisAutoOD ?? '')
     setSphAutoOS(d.sphAutoOS ?? ''); setCylAutoOS(d.cylAutoOS ?? ''); setAxisAutoOS(d.axisAutoOS ?? '')
     setIopOD(d.iopOD ?? ''); setIopOS(d.iopOS ?? '')
+    setIopActualOD(d.iopActualOD ?? ''); setIopActualOS(d.iopActualOS ?? '')
+    setPachyOD(d.pachyOD ?? ''); setPachyOS(d.pachyOS ?? '')
+    setAscanOD(d.ascanOD ?? ''); setAscanOS(d.ascanOS ?? '')
     setAnteriorOD(d.anteriorOD ?? 'NAD'); setAnteriorOS(d.anteriorOS ?? 'NAD')
     setDiscOD(d.discOD ?? ''); setDiscOS(d.discOS ?? ''); setCupOD(d.cupOD ?? ''); setCupOS(d.cupOS ?? '')
     setPosteriorOD(d.posteriorOD ?? ''); setPosteriorOS(d.posteriorOS ?? '')
@@ -343,7 +357,9 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
     vaType, vaChart, vaFarOD, vaFarOS, vaNearOD, vaNearOS,
     vaPinholeOD, vaPinholeOS, pxVaFarOD, pxVaFarOS, pxVaNearOD, pxVaNearOS,
     sphAutoOD, cylAutoOD, axisAutoOD, sphAutoOS, cylAutoOS, axisAutoOS,
-    iopOD, iopOS, anteriorOD, anteriorOS,
+    iopOD, iopOS, iopActualOD, iopActualOS,
+    pachyOD, pachyOS, ascanOD, ascanOS,
+    anteriorOD, anteriorOS,
     discOD, discOS, cupOD, cupOS, posteriorOD, posteriorOS,
     sphRetOD, cylRetOD, axisRetOD, sphRetOS, cylRetOS, axisRetOS,
     retVaFarOD, retVaFarOS,
@@ -419,6 +435,12 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
         px_va_near_os: pxVaNearOS ? `N${pxVaNearOS}` : null,
         iop_od: iopOD ? `${iopOD}mmHg` : null,
         iop_os: iopOS ? `${iopOS}mmHg` : null,
+        iop_actual_od: iopActualOD ? `${iopActualOD}mmHg` : null,
+        iop_actual_os: iopActualOS ? `${iopActualOS}mmHg` : null,
+        pachy_od: pachyOD ? `${pachyOD}µm` : null,
+        pachy_os: pachyOS ? `${pachyOS}µm` : null,
+        ascan_od: ascanOD ? `${ascanOD}mm` : null,
+        ascan_os: ascanOS ? `${ascanOS}mm` : null,
         ret_va_far_od: retVaFarOD || null,
         ret_va_far_os: retVaFarOS || null,
         final_va_far_od: finalVaFarOD || null,
@@ -602,10 +624,26 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
         <EyeRow label="Axis" odContent={<SuffixInput value={axisAutoOD} onChange={setAxisAutoOD} suffix="°" colorClass={OD_CLASS} />} osContent={<SuffixInput value={axisAutoOS} onChange={setAxisAutoOS} suffix="°" colorClass={OS_CLASS} />} />
       </div>
 
-      <SectionHeader title="IOP" />
-      <div className="grid grid-cols-2 gap-4">
-        <SuffixInput label="IOP OD (right)" value={iopOD} onChange={setIopOD} suffix="mmHg" colorClass={OD_CLASS} />
-        <SuffixInput label="IOP OS (left)" value={iopOS} onChange={setIopOS} suffix="mmHg" colorClass={OS_CLASS} />
+      <SectionHeader title="Tonometry (I.O.P)" />
+      <EyeColHeaders />
+      <ODOSDesktopHeader />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Estimated I.O.P" odContent={<SuffixInput value={iopOD} onChange={setIopOD} suffix="mmHg" colorClass={OD_CLASS} />} osContent={<SuffixInput value={iopOS} onChange={setIopOS} suffix="mmHg" colorClass={OS_CLASS} />} />
+        <EyeRow label="Actual I.O.P" odContent={<SuffixInput value={iopActualOD} onChange={setIopActualOD} suffix="mmHg" colorClass={OD_CLASS} />} osContent={<SuffixInput value={iopActualOS} onChange={setIopActualOS} suffix="mmHg" colorClass={OS_CLASS} />} />
+      </div>
+
+      <SectionHeader title="Pachymetry" />
+      <EyeColHeaders />
+      <ODOSDesktopHeader />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Thickness" odContent={<SuffixInput value={pachyOD} onChange={setPachyOD} suffix="µm" colorClass={OD_CLASS} />} osContent={<SuffixInput value={pachyOS} onChange={setPachyOS} suffix="µm" colorClass={OS_CLASS} />} />
+      </div>
+
+      <SectionHeader title="A-Scan (Axial Length)" />
+      <EyeColHeaders />
+      <ODOSDesktopHeader />
+      <div className="flex flex-col gap-3">
+        <EyeRow label="Axial length" odContent={<SuffixInput value={ascanOD} onChange={setAscanOD} suffix="mm" colorClass={OD_CLASS} />} osContent={<SuffixInput value={ascanOS} onChange={setAscanOS} suffix="mm" colorClass={OS_CLASS} />} />
       </div>
 
       <SectionHeader title="External Exam (Anterior Segment)" />

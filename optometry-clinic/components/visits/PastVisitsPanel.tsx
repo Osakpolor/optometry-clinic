@@ -123,7 +123,10 @@ function VisitDetail({ v }: { v: any }) {
     ['Pin hole', e.va_pinhole_od, e.va_pinhole_os],
     ['@Far (Rx)', e.px_va_far_od, e.px_va_far_os],
     ['@Near (Rx)', e.px_va_near_od, e.px_va_near_os],
-    ['IOP', e.iop_od, e.iop_os],
+    ['I.O.P (est)', e.iop_od, e.iop_os],
+    ['I.O.P (actual)', e.iop_actual_od, e.iop_actual_os],
+    ['Pachymetry', e.pachy_od, e.pachy_os],
+    ['Axial length', e.ascan_od, e.ascan_os],
   ] as [string, any, any][])
 
   const refRows = eyeRows([

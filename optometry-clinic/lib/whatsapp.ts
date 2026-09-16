@@ -238,13 +238,15 @@ export async function sendAppointmentReminderTemplate({
   }
 }
 
-// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v5) ─────────────────────
-// MARKETING category (Meta reclassified it because of the review link — we're
-// running this deliberately to measure review uptake; may revisit later).
-// Paragraph-spaced body, inline review link, NO button. Three body params:
+// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v4) ─────────────────────
+// PURE UTILITY — no review link. This is deliberate: a review link makes Meta
+// reclassify the template as MARKETING, and Marketing sends get silently
+// dropped by the per-user marketing cap (error 131049) — which is exactly what
+// v5 kept hitting in production. Utility delivers reliably and isn't subject to
+// that cap. The review ask now lives with Iris, conversationally, in free-form
+// chat (see prompts/olu-eye-clinic.md → INVITING A GOOGLE REVIEW). Two body params:
 //   {{1}} = patient name
-//   {{2}} = next appointment date, "July 28th, 2026" style (or fallback text)
-//   {{3}} = review link
+//   {{2}} = next appointment date, "July 28th, 2026" style
 
 export async function sendVisitThankYou({
   patientName,
@@ -288,14 +290,12 @@ export async function sendVisitThankYou({
     ? formatLongDate(followUpDate)
     : 'to be scheduled — please contact the clinic'
 
-  const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
-
   const body = {
     messaging_product: 'whatsapp',
     to,
     type: 'template',
     template: {
-      name: 'olu_visit_thankyou_v5',
+      name: 'olu_visit_thankyou_v4',
       language: { code: 'en' },
       components: [
         {
@@ -303,7 +303,6 @@ export async function sendVisitThankYou({
           parameters: [
             { type: 'text', text: patientName },
             { type: 'text', text: appointmentText },
-            { type: 'text', text: reviewLink },
           ],
         },
       ],
@@ -324,18 +323,15 @@ export async function sendVisitThankYou({
       console.error('sendVisitThankYou error:', data.error ?? data)
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
-    // Log the full human-readable message exactly as the olu_visit_thankyou_v5
-    // template renders it on the patient's phone (paragraph spacing included —
-    // newlines are fine here, this is our own DB, not a template param).
+    // Log the full human-readable message exactly as the olu_visit_thankyou_v4
+    // template renders it on the patient's phone (newlines are fine here — this
+    // is our own DB, not a template param).
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `Dear ${patientName},\n\n` +
-      `Thank you for trusting us with your eye health.\n\n` +
-      `*Your next appointment is on ${appointmentText}.*\n\n` +
-      `We'd love to hear about your experience at the clinic! Please leave us a review: ${reviewLink}\n\n` +
-      `Enjoy the rest of your day!\n\n` +
-      `Olu Eye Clinic.`
+      `Dear ${patientName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
+      `*Your next appointment is ${appointmentText}*\n\n` +
+      `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`
     )
     return { success: true }
   } catch (err: any) {

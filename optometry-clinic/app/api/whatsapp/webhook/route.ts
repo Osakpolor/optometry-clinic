@@ -89,6 +89,22 @@ export async function POST(req: NextRequest) {
       message: messageText,
     })
 
+    // ── Human takeover: is a staff member handling this conversation? ──
+    // When a staff member has taken over (or replied to) this number, Iris
+    // must stay silent so she doesn't talk over the human. The inbound is
+    // already logged above, so staff still see it in the inbox and can reply.
+    // Handing the conversation back to Iris clears this flag.
+    const { data: control } = await supabase
+      .from('conversation_controls')
+      .select('human_controlled')
+      .eq('phone_number', fromNumber)
+      .single()
+
+    if (control?.human_controlled) {
+      console.log(`🙋 Human-controlled — Iris silent for ${fromNumber}`)
+      return NextResponse.json({ status: 'ok' })
+    }
+
     // ── Messaging controls: should Iris reply at all? ────────
     // ai_enabled=false  → Iris paused for everyone.
     // test_mode=true    → Iris only replies to numbers on the allowlist;
@@ -159,12 +175,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Load conversation history (cross-session memory) ─────
-    // Previously capped to the last 2 hours, so Iris forgot everything older.
-    // Now we load the 30 most-recent DIALOGUE turns (user + assistant) across
-    // all time, so Iris remembers past conversations — days or weeks back.
-    // We fetch newest-first then reverse to chronological order. 'system' rows
-    // (automated sends, delivery-failure logs) are excluded here AND again in
-    // claude-whatsapp.ts, so they never pollute Claude's memory.
+    // Load the 30 most-recent DIALOGUE turns (user + assistant) across all
+    // time, so Iris remembers past conversations — days or weeks back. We
+    // fetch newest-first then reverse to chronological order. 'system' AND
+    // 'staff' rows are excluded here (and again in claude-whatsapp.ts), so
+    // automated logs and human replies never pollute Iris's memory.
     const { data: historyDesc } = await supabase
       .from('whatsapp_conversations')
       .select('role, message, created_at')

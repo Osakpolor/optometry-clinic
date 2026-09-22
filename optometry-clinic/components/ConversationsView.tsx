@@ -1,20 +1,22 @@
 'use client'
 
 // components/ConversationsView.tsx
-// WhatsApp-style team inbox. Left: threads (search, unread dots, takeover tag).
-// Right: transcript that auto-scrolls to newest, a window-aware composer for
-// staff replies, and take-over / hand-back-to-Iris controls.
-//
-// Permissions come from the server: `access` decides whether the composer and
-// takeover controls appear at all; a 'preview' role sees the list but not the
-// transcript.
+// WhatsApp-style team inbox with LIVE updates (Supabase Realtime).
+//   • Live: new patient/Iris/staff/system messages appear without refresh, the
+//     thread list re-sorts, unread dots tick up, and (optionally) a browser
+//     notification fires when the tab is in the background.
+//   • Composer: window-aware free-form reply inside 24h; outside it, a
+//     "send reminder template" action instead of a dead end.
+//   • Take over / hand back to Iris; per-role visibility (none/preview/full).
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 import type { ConversationThread } from '@/app/actions/getConversations'
 import { getConversationMessages, type ThreadContext } from '@/app/actions/getConversations'
 import { sendStaffReply } from '@/app/actions/sendStaffReply'
 import { handBackToIris, takeOverConversation, markThreadRead } from '@/app/actions/conversationControl'
+import { sendManualReminder } from '@/app/actions/sendManualTemplate'
 import type { RoleAccess } from '@/lib/conversationAccess'
 
 function timeLabel(iso: string) {
@@ -44,8 +46,22 @@ export function ConversationsView({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [reminderMsg, setReminderMsg] = useState<string | null>(null)
+  const [notifOn, setNotifOn] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Refs so the Realtime callback (subscribed once) reads current values.
+  const selectedPhoneRef = useRef<string | null>(null)
+  const notifOnRef = useRef(false)
+  const threadsRef = useRef(threads)
+  useEffect(() => { selectedPhoneRef.current = selected?.phoneNumber ?? null }, [selected])
+  useEffect(() => { notifOnRef.current = notifOn }, [notifOn])
+  useEffect(() => { threadsRef.current = threads }, [threads])
+
+  // Restore the notification preference (per-viewer convenience).
+  useEffect(() => {
+    try { setNotifOn(localStorage.getItem('wa_notif') === '1') } catch {}
+  }, [])
 
   // Auto-scroll to newest whenever the transcript changes.
   useEffect(() => {
@@ -53,7 +69,95 @@ export function ConversationsView({
     if (el) el.scrollTop = el.scrollHeight
   }, [ctx?.messages, loading])
 
-  // Date-range + search filter
+  // ── Realtime subscription (once) ──────────────────────────
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('wa-inbox')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'whatsapp_conversations' },
+        (payload) => {
+          const row = payload.new as {
+            id: string; phone_number: string; role: string; message: string; created_at: string
+          }
+          const openPhone = selectedPhoneRef.current
+
+          // 1. Append to the open transcript (dedupe by id)
+          if (row.phone_number === openPhone) {
+            setCtx(prev => {
+              if (!prev || !prev.messages) return prev
+              if (prev.messages.some((m: any) => m.id === row.id)) return prev
+              return { ...prev, messages: [...prev.messages, row] }
+            })
+            if (row.role === 'user') markThreadRead(row.phone_number)
+          }
+
+          // 2. Update the thread list (upsert, re-sort, unread)
+          setThreads(prev => {
+            const existing = prev.find(t => t.phoneNumber === row.phone_number)
+            let next: ConversationThread[]
+            if (existing) {
+              next = prev.map(t =>
+                t.phoneNumber === row.phone_number
+                  ? {
+                      ...t,
+                      lastMessageAt: row.created_at,
+                      lastMessagePreview: (row.message ?? '').slice(0, 80),
+                      lastMessageRole: row.role,
+                      hasUnread: row.role === 'user' && row.phone_number !== openPhone ? true : t.hasUnread,
+                    }
+                  : t
+              )
+            } else {
+              next = [
+                {
+                  phoneNumber: row.phone_number,
+                  displayName: row.phone_number,
+                  kind: 'unknown',
+                  patientId: null,
+                  lastMessageAt: row.created_at,
+                  messageCount: 1,
+                  lastMessagePreview: (row.message ?? '').slice(0, 80),
+                  lastMessageRole: row.role,
+                  humanControlled: false,
+                  hasUnread: row.role === 'user',
+                },
+                ...prev,
+              ]
+            }
+            return [...next].sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+          })
+
+          // 3. Background browser notification on a new inbound message
+          if (
+            row.role === 'user' &&
+            typeof document !== 'undefined' &&
+            document.hidden &&
+            notifOnRef.current &&
+            'Notification' in window &&
+            Notification.permission === 'granted'
+          ) {
+            const name = threadsRef.current.find(t => t.phoneNumber === row.phone_number)?.displayName ?? row.phone_number
+            try { new Notification('New WhatsApp message', { body: `${name}: ${(row.message ?? '').slice(0, 80)}` }) } catch {}
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  async function toggleNotif() {
+    const next = !notifOn
+    if (next && 'Notification' in window && Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') return
+    }
+    setNotifOn(next)
+    try { localStorage.setItem('wa_notif', next ? '1' : '0') } catch {}
+  }
+
   const filteredThreads = useMemo(() => {
     const now = new Date()
     const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0)
@@ -79,14 +183,11 @@ export function ConversationsView({
 
   async function openThread(t: ConversationThread) {
     setSelected(t)
-    setDraft('')
-    setSendError(null)
-    setCtx(null)
+    setDraft(''); setSendError(null); setReminderMsg(null); setCtx(null)
     setLoading(true)
     const result = await getConversationMessages(t.phoneNumber)
     setLoading(false)
     setCtx(result)
-    // Clear unread locally + persist read mark
     if (t.hasUnread) {
       setThreads(prev => prev.map(x => x.phoneNumber === t.phoneNumber ? { ...x, hasUnread: false } : x))
       markThreadRead(t.phoneNumber)
@@ -100,23 +201,28 @@ export function ConversationsView({
 
   async function onSend() {
     if (!selected || !draft.trim()) return
-    setSending(true)
-    setSendError(null)
+    setSending(true); setSendError(null)
     const text = draft.trim()
     const res = await sendStaffReply(selected.phoneNumber, text)
     setSending(false)
-    if (!res.ok) {
-      setSendError(res.error ?? 'Could not send')
-      return
-    }
+    if (!res.ok) { setSendError(res.error ?? 'Could not send'); return }
     setDraft('')
-    // Reflect the sent message + takeover immediately
     await refreshThread(selected.phoneNumber)
     setThreads(prev => prev.map(x =>
-      x.phoneNumber === selected.phoneNumber
-        ? { ...x, humanControlled: true, lastMessagePreview: text.slice(0, 80), lastMessageAt: new Date().toISOString(), lastMessageRole: 'staff' }
-        : x
+      x.phoneNumber === selected.phoneNumber ? { ...x, humanControlled: true } : x
     ))
+  }
+
+  async function onReminder() {
+    if (!selected) return
+    setReminderMsg('Sending reminder…')
+    const res = await sendManualReminder(selected.phoneNumber)
+    if (res.ok) {
+      setReminderMsg('Reminder sent ✓')
+      await refreshThread(selected.phoneNumber)
+    } else {
+      setReminderMsg(res.error ?? 'Could not send reminder')
+    }
   }
 
   async function onTakeOver() {
@@ -135,15 +241,24 @@ export function ConversationsView({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-240px)] min-h-[440px]">
-      {/* ── Thread list ── (hidden on mobile once a thread is open) */}
+      {/* ── Thread list ── */}
       <div className={`border border-border rounded-lg overflow-hidden bg-white flex flex-col ${selected ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-2 border-b bg-gray-50/60 shrink-0 space-y-2">
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search name, number or message"
-            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search name, number or message"
+              className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+            <button
+              onClick={toggleNotif}
+              title={notifOn ? 'Background alerts on' : 'Background alerts off'}
+              className={`shrink-0 rounded-md border px-2 py-1.5 text-sm ${notifOn ? 'border-brand text-brand' : 'border-gray-300 text-gray-400'}`}
+            >
+              {notifOn ? '🔔' : '🔕'}
+            </button>
+          </div>
           <div className="flex gap-1">
             {rangeTabs.map(tab => (
               <button
@@ -206,7 +321,6 @@ export function ConversationsView({
           </div>
         ) : (
           <>
-            {/* Header */}
             <div className="px-4 py-3 border-b shrink-0 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <button onClick={() => setSelected(null)} className="md:hidden text-brand text-sm shrink-0">←</button>
@@ -222,7 +336,6 @@ export function ConversationsView({
               )}
             </div>
 
-            {/* Takeover banner (only for full-access repliers) */}
             {canFull && ctx && access?.can_reply && (
               <div className="px-4 py-2 border-b bg-gray-50/70 shrink-0 flex items-center justify-between gap-2 text-xs">
                 {ctx.humanControlled ? (
@@ -245,7 +358,6 @@ export function ConversationsView({
               </div>
             )}
 
-            {/* Transcript */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 bg-gray-50/50">
               {loading ? (
                 <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
@@ -261,7 +373,6 @@ export function ConversationsView({
                   const isUser = m.role === 'user'
                   const isSystem = m.role === 'system'
                   const isStaff = m.role === 'staff'
-                  // Patient → left/white; Iris → green; automated → blue; staff → teal(brand)
                   const bubble = isUser
                     ? 'bg-white border border-gray-200 rounded-tl-sm text-gray-800'
                     : isSystem
@@ -292,10 +403,16 @@ export function ConversationsView({
               </div>
             ) : ctx && !ctx.windowOpen ? (
               <div className="px-4 py-3 border-t shrink-0 bg-amber-50">
-                <p className="text-xs text-amber-800 text-center">
+                <p className="text-xs text-amber-800 text-center mb-2">
                   This patient last messaged more than 24 hours ago, so WhatsApp won't deliver a typed
-                  reply. Send an approved template (reminder or thank-you) to reopen the conversation.
+                  reply. Send an approved template to reach them.
                 </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={onReminder} className="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover">
+                    Send appointment reminder
+                  </button>
+                  {reminderMsg && <span className="text-xs text-amber-800">{reminderMsg}</span>}
+                </div>
               </div>
             ) : (
               <div className="px-3 py-2.5 border-t shrink-0 bg-white">
@@ -304,9 +421,7 @@ export function ConversationsView({
                   <textarea
                     value={draft}
                     onChange={e => setDraft(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() }
-                    }}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
                     rows={1}
                     placeholder="Type a reply…  (Enter to send, Shift+Enter for a new line)"
                     className="flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand max-h-32"
@@ -319,9 +434,15 @@ export function ConversationsView({
                     {sending ? 'Sending…' : 'Send'}
                   </button>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Replying here pauses Iris for this conversation until you hand it back.
-                </p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[10px] text-muted-foreground">
+                    Replying here pauses Iris until you hand it back.
+                  </p>
+                  <button onClick={onReminder} className="text-[10px] text-brand hover:underline">
+                    Send appointment reminder
+                  </button>
+                </div>
+                {reminderMsg && <p className="text-[10px] text-muted-foreground mt-0.5 text-right">{reminderMsg}</p>}
               </div>
             )}
           </>

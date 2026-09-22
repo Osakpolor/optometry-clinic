@@ -5,6 +5,7 @@ import LeadsTable from '@/components/LeadsTable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import DashboardRefresh from '@/components/DashboardRefresh'
+import ConversationsPreview from '@/components/ConversationsPreview'
 
 // ── Date helpers ────────────────────────────────────────────────────────────
 
@@ -368,6 +369,9 @@ export default async function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Recent conversations */}
+          <ConversationsPreview />
 
           {/* Quick actions */}
           <Card className="border border-border shadow-none">

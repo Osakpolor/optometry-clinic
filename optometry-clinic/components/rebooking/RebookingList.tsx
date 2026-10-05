@@ -72,13 +72,18 @@ export default function RebookingList({ requests }: Props) {
     setLoadingId(req.id)
     try {
       // 1. Create appointment
+      // Combine date + time into a single timestamp (appointments.appointment_date is timestamptz)
+      const appointmentTimestamp = approvalForm.time
+        ? `${approvalForm.date}T${approvalForm.time}:00`
+        : `${approvalForm.date}T00:00:00`
+
       const { data: appt, error: apptErr } = await supabase
         .from('appointments')
         .insert({
           patient_id:       req.patient_id,
-          appointment_date: approvalForm.date,
-          appointment_time: approvalForm.time || null,
-          reason:           req.service ?? req.notes ?? 'Rebook via WhatsApp',
+          appointment_date: appointmentTimestamp,
+          service_type:     req.service ?? 'Follow-up visit',
+          notes:            req.notes ?? 'Rebook via WhatsApp',
           status:           'scheduled',
         })
         .select('id')

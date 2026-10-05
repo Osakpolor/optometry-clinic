@@ -17,11 +17,11 @@ type RebookRequest = {
   resolution_note: string | null
   resolved_at: string | null
   created_at: string
-  patients: {
-    id: string
-    full_name: string
-    file_number: string | null
-  } | null
+patients: {
+id: string
+full_name: string
+file_number: string | null
+}[] | null
 }
 
 type Props = {
@@ -221,9 +221,9 @@ export default function RebookingList({ requests }: Props) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-[#171717]">{req.patient_name}</span>
-                        {req.patients?.file_number && (
-                          <span className="text-xs text-gray-400">#{req.patients.file_number}</span>
-                        )}
+                                    {req.patients?.[0]?.file_number && (
+                                        <span className="text-xs text-gray-400">#{req.patients[0].file_number}</span>
+                                    )}
                         {statusBadge(req.status)}
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5">{req.phone_number}</p>

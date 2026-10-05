@@ -11,7 +11,7 @@ export default async function RebookingPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const role = await getUserRole(supabase, user.id)
+  const role = await getUserRole()
 
   // Only receptionist and admin can access this page
   if (role !== 'receptionist' && role !== 'admin') {

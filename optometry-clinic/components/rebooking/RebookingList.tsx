@@ -17,11 +17,11 @@ type RebookRequest = {
   resolution_note: string | null
   resolved_at: string | null
   created_at: string
-patients: {
-id: string
-full_name: string
-file_number: string | null
-}[] | null
+  patients: {
+    id: string
+    full_name: string
+    file_number: string | null
+  }[] | null
 }
 
 type Props = {
@@ -34,6 +34,7 @@ export default function RebookingList({ requests }: Props) {
 
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [rejectPanelId, setRejectPanelId] = useState<string | null>(null)
 
   // Form state for the approval panel
   const [approvalForm, setApprovalForm] = useState<{
@@ -46,6 +47,17 @@ export default function RebookingList({ requests }: Props) {
     time: '',
     cancelPrevious: false,
     note: '',
+  })
+
+  // Form state for the reject panel
+  const [rejectForm, setRejectForm] = useState<{
+    suggestedDate: string
+    message: string
+    internalNote: string
+  }>({
+    suggestedDate: '',
+    message: '',
+    internalNote: '',
   })
 
   const pending = requests.filter(r => r.status === 'pending')
@@ -134,10 +146,38 @@ export default function RebookingList({ requests }: Props) {
     }
   }
 
+  function openRejectPanel(req: RebookRequest) {
+    setRejectPanelId(req.id)
+    setExpandedId(null) // close approve panel if open
+    // Pre-fill a sensible default message
+    const dateHint = req.requested_date
+      ? ` for ${formatDate(req.requested_date)}`
+      : ''
+    setRejectForm({
+      suggestedDate: '',
+      message: `Hi ${req.patient_name}, unfortunately we're unable to book you${dateHint}. ` +
+        `Please call us on 09166015438 or suggest another date and we'll do our best to accommodate you.`,
+      internalNote: '',
+    })
+  }
+
   async function handleReject(req: RebookRequest) {
-    const reason = prompt('Reason for rejecting? (optional)')
+    if (!rejectForm.message.trim()) return
     setLoadingId(req.id)
     try {
+      // 1. Send WhatsApp reply to patient
+      const sendRes = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: req.phone_number, message: rejectForm.message.trim() }),
+      })
+      if (!sendRes.ok) {
+        const err = await sendRes.json()
+        alert(`Failed to send WhatsApp message: ${err.error ?? 'unknown error'}`)
+        return
+      }
+
+      // 2. Mark rebook request as rejected
       const { data: { user } } = await supabase.auth.getUser()
       const { data: staffRow } = await supabase
         .from('staff_profiles')
@@ -151,11 +191,16 @@ export default function RebookingList({ requests }: Props) {
           status:          'rejected',
           resolved_by:     staffRow?.id ?? null,
           resolved_at:     new Date().toISOString(),
-          resolution_note: reason ?? null,
+          resolution_note: rejectForm.internalNote || rejectForm.message,
         })
         .eq('id', req.id)
 
+      setRejectPanelId(null)
+      setRejectForm({ suggestedDate: '', message: '', internalNote: '' })
       router.refresh()
+    } catch (err) {
+      console.error('Error rejecting rebook:', err)
+      alert('Something went wrong. Please try again.')
     } finally {
       setLoadingId(null)
     }
@@ -221,9 +266,9 @@ export default function RebookingList({ requests }: Props) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-[#171717]">{req.patient_name}</span>
-                                    {req.patients?.[0]?.file_number && (
-                                        <span className="text-xs text-gray-400">#{req.patients[0].file_number}</span>
-                                    )}
+                        {req.patients?.[0]?.file_number && (
+                          <span className="text-xs text-gray-400">#{req.patients[0].file_number}</span>
+                        )}
                         {statusBadge(req.status)}
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5">{req.phone_number}</p>
@@ -267,7 +312,7 @@ export default function RebookingList({ requests }: Props) {
                       Approve & Book
                     </button>
                     <button
-                      onClick={() => handleReject(req)}
+                      onClick={() => openRejectPanel(req)}
                       disabled={loadingId === req.id}
                       className="px-4 py-1.5 border border-gray-200 text-gray-600 text-sm rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
                     >
@@ -281,6 +326,85 @@ export default function RebookingList({ requests }: Props) {
                     </a>
                   </div>
                 </div>
+
+                {/* Reject panel (expandable) */}
+                {rejectPanelId === req.id && (
+                  <div className="border-t border-red-50 bg-red-50 px-5 py-4 space-y-4">
+                    <p className="text-xs font-semibold text-red-500 uppercase tracking-wider">
+                      Reject & reply to patient
+                    </p>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Suggest an alternative date (optional)
+                      </label>
+                      <input
+                        type="date"
+                        value={rejectForm.suggestedDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={e => {
+                          const d = e.target.value
+                          setRejectForm(f => {
+                            const formattedDate = d
+                              ? new Date(d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+                              : ''
+                            // Rebuild message with new date suggestion
+                            const dateHint = req.requested_date ? ` for ${formatDate(req.requested_date)}` : ''
+                            const altHint = formattedDate ? ` Would ${formattedDate} work for you instead?` : ''
+                            return {
+                              ...f,
+                              suggestedDate: d,
+                              message:
+                                `Hi ${req.patient_name}, unfortunately we're unable to book you${dateHint}.${altHint} ` +
+                                `For enquiries call 09166015438.`,
+                            }
+                          })
+                        }}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Message to patient <span className="text-red-400">*</span>
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={rejectForm.message}
+                        onChange={e => setRejectForm(f => ({ ...f, message: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">This is sent to the patient on WhatsApp.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Internal note (optional, not sent)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Fully booked that week"
+                        value={rejectForm.internalNote}
+                        onChange={e => setRejectForm(f => ({ ...f, internalNote: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleReject(req)}
+                        disabled={loadingId === req.id || !rejectForm.message.trim()}
+                        className="px-5 py-2 bg-red-500 text-white text-sm rounded-md hover:bg-red-600 transition-colors disabled:opacity-50"
+                      >
+                        {loadingId === req.id ? 'Sending…' : 'Send & Reject'}
+                      </button>
+                      <button
+                        onClick={() => setRejectPanelId(null)}
+                        className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Approval panel (expandable) */}
                 {expandedId === req.id && (

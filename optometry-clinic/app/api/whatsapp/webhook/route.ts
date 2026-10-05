@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
 import { getPhoneVariants } from '@/lib/phone-utils'
-import { getSettings, isAllowedRecipient } from '@/lib/settings'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -26,35 +26,6 @@ export async function POST(req: NextRequest) {
     const value    = changes?.value
     const messages = value?.messages
 
-    // ── Delivery status callbacks (sent / delivered / read / FAILED) ──
-    // Meta reports these asynchronously AFTER accepting a send. A message can
-    // be accepted by the API yet silently dropped at delivery (e.g. error
-    // 131049 — per-user marketing template limit). Without this block those
-    // failures are invisible. We log failures to the console (Vercel logs)
-    // AND into whatsapp_conversations so they show in the staff viewer.
-    const statuses = value?.statuses
-    if (statuses && statuses.length > 0) {
-      for (const s of statuses) {
-        if (s.status === 'failed') {
-          const err = s.errors?.[0]
-          const detail =
-            `error ${err?.code ?? '?'}: ${err?.title ?? 'unknown'}` +
-            (err?.error_data?.details ? ` — ${err.error_data.details}` : '')
-          console.error(`❌ WhatsApp delivery FAILED to ${s.recipient_id}: ${detail}`)
-
-          const sb = await createClient()
-          await sb.from('whatsapp_conversations').insert({
-            phone_number: s.recipient_id,
-            role: 'system',
-            message: `⚠️ [Delivery failed] ${detail}`,
-          })
-        } else {
-          console.log(`📬 WhatsApp status: ${s.status} → ${s.recipient_id}`)
-        }
-      }
-      return NextResponse.json({ status: 'ok' })
-    }
-
     if (!messages || messages.length === 0) {
       return NextResponse.json({ status: 'ok' })
     }
@@ -70,7 +41,8 @@ export async function POST(req: NextRequest) {
 
     console.log(`📱 Message from ${fromNumber}: ${messageText}`)
 
-    const supabase = await createClient()
+    // Use admin client for webhook — cookie client won't work here (no session)
+    const supabase = createAdminClient()
     const receivedAt = new Date().toISOString()
 
     // ── Record message arrival time ──────────────────────────
@@ -82,44 +54,11 @@ export async function POST(req: NextRequest) {
       }, { onConflict: 'phone_number' })
 
     // ── Save incoming message ────────────────────────────────
-    // Always logged (even when Iris is paused) so staff still see inbound.
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'user',
       message: messageText,
     })
-
-    // ── Human takeover: is a staff member handling this conversation? ──
-    // When a staff member has taken over (or replied to) this number, Iris
-    // must stay silent so she doesn't talk over the human. The inbound is
-    // already logged above, so staff still see it in the inbox and can reply.
-    // Handing the conversation back to Iris clears this flag.
-    const { data: control } = await supabase
-      .from('conversation_controls')
-      .select('human_controlled')
-      .eq('phone_number', fromNumber)
-      .single()
-
-    if (control?.human_controlled) {
-      console.log(`🙋 Human-controlled — Iris silent for ${fromNumber}`)
-      return NextResponse.json({ status: 'ok' })
-    }
-
-    // ── Messaging controls: should Iris reply at all? ────────
-    // ai_enabled=false  → Iris paused for everyone.
-    // test_mode=true    → Iris only replies to numbers on the allowlist;
-    //                     real patients messaging during a test window get
-    //                     NO reply, so keep test windows short + deliberate.
-    // We've already logged the inbound above, so nothing is lost — Iris just
-    // stays silent.
-    const settings = await getSettings()
-    if (!settings.ai_enabled || !isAllowedRecipient(fromNumber, settings)) {
-      console.log(
-        `🤖 Iris reply suppressed for ${fromNumber} ` +
-        `(ai_enabled=${settings.ai_enabled}, test_mode=${settings.test_mode})`
-      )
-      return NextResponse.json({ status: 'ok' })
-    }
 
     // ── Wait 6 seconds for more messages ────────────────────
     await new Promise(resolve => setTimeout(resolve, 6000))
@@ -144,10 +83,13 @@ export async function POST(req: NextRequest) {
       .from('patients')
       .select('id, full_name, phone, date_of_birth')
       .or(phoneOrClause)
+      .is('deleted_at', null)
       .limit(1)
 
     const patient = patientMatches?.[0] ?? null
 
+    // Only look up leads if NOT a known patient
+    // Known patients who want to rebook go through the rebook flow, not leads
     let lead = null
     if (!patient) {
       const { data: leadMatches } = await supabase
@@ -174,61 +116,17 @@ export async function POST(req: NextRequest) {
       recentVisit = allVisits[0] ?? null
     }
 
-    // ── Load conversation history (cross-session memory) ─────
-    // Load the 30 most-recent DIALOGUE turns (user + assistant) across all
-    // time, so Iris remembers past conversations — days or weeks back. We
-    // fetch newest-first then reverse to chronological order. 'system' AND
-    // 'staff' rows are excluded here (and again in claude-whatsapp.ts), so
-    // automated logs and human replies never pollute Iris's memory.
-    const { data: historyDesc } = await supabase
+    // ── Load conversation history ────────────────────────────
+    const { data: history } = await supabase
       .from('whatsapp_conversations')
       .select('role, message, created_at')
       .eq('phone_number', fromNumber)
-      .in('role', ['user', 'assistant'])
-      .order('created_at', { ascending: false })
-      .limit(30)
-
-    const history = (historyDesc ?? []).slice().reverse()
-
-    // ── Compute greeting flags for Iris ──────────────────────
-    // We base these on Iris's OWN past replies (role: 'assistant'), not on the
-    // user's messages. That way a first-ever burst of 2-3 quick messages still
-    // counts as one first-ever contact (there are no prior assistant replies yet),
-    // instead of the later messages cancelling the intro.
-    //
-    // isFirstEverContact: Iris has never replied to this number before.
-    // isFirstToday:       Iris has replied before, but not yet today (WAT).
-
-    // Start of today in WAT (UTC+1), expressed as a UTC instant.
-    const watNow = new Date(Date.now() + 60 * 60 * 1000) // shift to WAT wall-clock
-    const startOfTodayWatUtc = new Date(
-      Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate(), 0, 0, 0)
-        - 60 * 60 * 1000, // pull WAT-midnight back to its real UTC instant
-    ).toISOString()
-
-    const { count: priorAssistantEver } = await supabase
-      .from('whatsapp_conversations')
-      .select('*', { count: 'exact', head: true })
-      .eq('phone_number', fromNumber)
-      .eq('role', 'assistant')
-      .lt('created_at', receivedAt)
-
-    const isFirstEverContact = (priorAssistantEver ?? 0) === 0
-
-    const { count: priorAssistantToday } = await supabase
-      .from('whatsapp_conversations')
-      .select('*', { count: 'exact', head: true })
-      .eq('phone_number', fromNumber)
-      .eq('role', 'assistant')
-      .gte('created_at', startOfTodayWatUtc)
-      .lt('created_at', receivedAt)
-
-    // First-ever takes precedence, so isFirstToday is only true when it's NOT
-    // their first ever contact.
-    const isFirstToday = !isFirstEverContact && (priorAssistantToday ?? 0) === 0
+      .gte('created_at', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: true })
+      .limit(20)
 
     // ── Generate Claude reply ────────────────────────────────
-    const { reply, booking } = await generateClaudeReply({
+    const { reply, booking, rebook, appointment_cancelled } = await generateClaudeReply({
       fromNumber,
       messageText,
       patient: patient ?? null,
@@ -236,11 +134,9 @@ export async function POST(req: NextRequest) {
       recentVisit,
       allVisits,
       conversationHistory: history ?? [],
-      isFirstEverContact,
-      isFirstToday,
     })
 
-    // ── Save Claude's reply (clean version, no hidden block) ──
+    // ── Save Claude's reply ──────────────────────────────────
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'assistant',
@@ -250,52 +146,91 @@ export async function POST(req: NextRequest) {
     // ── Send to WhatsApp ─────────────────────────────────────
     await sendWhatsAppMessage(fromNumber, reply)
 
-    // ── Save confirmed booking to leads ───────────────────────
-    if (booking && booking.name && booking.date) {
-      // Validate Claude's extracted phone is actually numeric digits,
-      // not a placeholder string like "whatsapp_number" or "this number".
-      // If invalid, fall back to the verified WhatsApp sender number —
-      // which is always the ground truth for who is messaging.
-      const rawPhone = booking.phone?.toString().trim() ?? ''
-      const digitsOnly = rawPhone.replace(/[^\d+]/g, '')
-      const isValidPhone = /^\+?\d{10,15}$/.test(digitsOnly)
-      const finalPhone = isValidPhone ? digitsOnly : fromNumber
+    // ── Route: REBOOK from known patient ────────────────────
+    // Known patient asking to reschedule → rebook_requests table
+    if (patient && rebook && rebook.requested_date) {
+      await supabase.from('rebook_requests').insert({
+        patient_id:     patient.id,
+        phone_number:   fromNumber,
+        patient_name:   patient.full_name,
+        requested_date: rebook.requested_date,
+        requested_time: rebook.requested_time ?? null,
+        service:        rebook.service ?? null,
+        notes:          rebook.notes ?? null,
+        status:         'pending',
+      })
 
-      const phoneVariantsForLead = getPhoneVariants(finalPhone)
-      const leadPhoneOrClause = phoneVariantsForLead.map(p => `phone.eq.${p}`).join(',')
+      console.log(`🔄 Rebook request saved for ${patient.full_name} on ${rebook.requested_date}`)
+    }
 
-      const { data: existingLeadMatches } = await supabase
+    // ── Route: NEW LEAD from unknown/non-patient ─────────────
+    // Only save to leads if NOT a known patient
+    if (!patient && booking && booking.name && booking.date) {
+      const { data: existingLead } = await supabase
         .from('leads')
         .select('id')
-        .or(leadPhoneOrClause)
+        .or(phoneOrClause)
         .order('created_at', { ascending: false })
         .limit(1)
-
-      const existingLead = existingLeadMatches?.[0] ?? null
+        .single()
 
       if (existingLead) {
         await supabase
           .from('leads')
           .update({
-            full_name: booking.name,
+            full_name:        booking.name,
             service_interest: booking.service ?? 'Eye exam',
-            preferred_date: booking.date,
-            preferred_time: booking.time,
-            status: 'new',
+            preferred_date:   booking.date,
+            preferred_time:   booking.time,
+            status:           'new',
           })
           .eq('id', existingLead.id)
       } else {
         await supabase.from('leads').insert({
-          full_name: booking.name,
-          phone: finalPhone,
+          full_name:        booking.name,
+          phone:            booking.phone ?? fromNumber,
           service_interest: booking.service ?? 'Eye exam',
-          preferred_date: booking.date,
-          preferred_time: booking.time,
-          status: 'new',
+          preferred_date:   booking.date,
+          preferred_time:   booking.time,
+          status:           'new',
         })
       }
 
-      console.log(`✅ Booking saved for ${booking.name} on ${booking.date} at ${booking.time}`)
+      console.log(`✅ New lead booking saved for ${booking.name} on ${booking.date}`)
+    }
+
+    // ── Handle patient cancellation via WhatsApp ─────────────
+    // Patient says they can't make it → mark their upcoming appointment
+    // so the cron stops sending reminders
+    if (appointment_cancelled) {
+      const cancelPhoneVariants = getPhoneVariants(appointment_cancelled.phone ?? fromNumber)
+      const cancelPhoneOr = cancelPhoneVariants.map(p => `phone.eq.${p}`).join(',')
+
+      // Find their most recent upcoming appointment that hasn't been cancelled
+      if (patient) {
+        const today = new Date().toISOString().split('T')[0]
+        const { data: upcomingAppts } = await supabase
+          .from('appointments')
+          .select('id, appointment_date')
+          .eq('patient_id', patient.id)
+          .gte('appointment_date', today)
+          .eq('cancelled_by_patient', false)
+          .order('appointment_date', { ascending: true })
+          .limit(1)
+
+        if (upcomingAppts && upcomingAppts.length > 0) {
+          await supabase
+            .from('appointments')
+            .update({
+              cancelled_by_patient: true,
+              cancellation_reason:  appointment_cancelled.reason ?? 'Patient cancelled via WhatsApp',
+              cancelled_at:         new Date().toISOString(),
+            })
+            .eq('id', upcomingAppts[0].id)
+
+          console.log(`❌ Appointment ${upcomingAppts[0].id} cancelled by patient ${patient.full_name} via WhatsApp`)
+        }
+      }
     }
 
     return NextResponse.json({ status: 'ok' })

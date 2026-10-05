@@ -12,25 +12,40 @@ import { getUnreadThreadCount } from '@/app/actions/conversationBadges'
 
 type Props = {
   isAdmin: boolean
+  isReceptionist?: boolean
 }
 
-const NAV_LINKS = [
+const BASE_NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/patients', label: 'Patients' },
   { href: '/dashboard/appointments', label: 'Appointments' },
   { href: '/dashboard/conversations', label: 'Conversations' },
 ]
 
-export default function DashboardNav({ isAdmin }: Props) {
+export default function DashboardNav({ isAdmin, isReceptionist = false }: Props) {
   const [open, setOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const pathname = usePathname()
   const pathRef = useRef(pathname)
   useEffect(() => { pathRef.current = pathname }, [pathname])
 
-  const links = isAdmin
-    ? [...NAV_LINKS, { href: '/dashboard/staff', label: 'Staff' }, { href: '/dashboard/audit', label: 'Audit' }]
-    : NAV_LINKS
+  const canSeeStaffFeatures = isAdmin || isReceptionist
+
+  // Build the nav link list based on role
+  const links = [
+    ...BASE_NAV_LINKS,
+    // Rebooking — receptionist and admin only
+    ...(canSeeStaffFeatures
+      ? [{ href: '/dashboard/rebooking', label: 'Rebooking' }]
+      : []),
+    // Admin-only links
+    ...(isAdmin
+      ? [
+          { href: '/dashboard/staff', label: 'Staff' },
+          { href: '/dashboard/audit', label: 'Audit' },
+        ]
+      : []),
+  ]
 
   // Recompute the unread count on mount and whenever the route changes
   // (opening the inbox marks threads read, so leaving it refreshes the badge).
@@ -61,7 +76,9 @@ export default function DashboardNav({ isAdmin }: Props) {
       <span className="inline-flex items-center gap-1.5">
         {link.label}
         {showBadge && (
-          <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-brand text-white ${mobile ? '' : ''}`}>
+          <span
+            className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-brand text-white`}
+          >
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -81,7 +98,9 @@ export default function DashboardNav({ isAdmin }: Props) {
                 key={link.href}
                 href={link.href}
                 className={`px-2 py-1 rounded text-sm transition-colors ${
-                  pathname === link.href ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+                  pathname === link.href
+                    ? 'text-foreground font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {label(link)}

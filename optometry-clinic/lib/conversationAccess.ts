@@ -14,11 +14,13 @@ import { createClient as createAdmin } from '@supabase/supabase-js'
 export type ConvView = 'none' | 'preview' | 'full'
 export type RoleAccess = { view: ConvView; can_reply: boolean }
 
-// Fallback if the setting is missing or malformed. Conservative: receptionist
-// gets preview and cannot reply; anyone unrecognised sees nothing.
+// Fallback if the setting is missing or malformed.
+// Receptionist is the primary WhatsApp responder — full access + reply.
+// Doctor gets full read but cannot reply (clinical not operational role).
+// Anyone unrecognised sees nothing.
 const DEFAULT_VISIBILITY: Record<string, RoleAccess> = {
-  doctor: { view: 'full', can_reply: true },
-  receptionist: { view: 'preview', can_reply: false },
+  doctor: { view: 'full', can_reply: false },
+  receptionist: { view: 'full', can_reply: true },
 }
 
 function admin() {

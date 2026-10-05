@@ -3,13 +3,6 @@ import { loadClinicPrompt } from './prompt-loader'
 type ReplyContext = {
   fromNumber: string
   messageText: string
-  // ── Greeting flags (computed in the webhook, where the DB lives) ──
-  // isFirstEverContact: true ONLY the very first time this number ever messages us.
-  // isFirstToday: true if this is their first message today (but not their first ever).
-  // If the webhook doesn't set these yet, they arrive undefined → treated as false,
-  // which just means Iris gives no greeting and answers normally. Nothing breaks.
-  isFirstEverContact?: boolean
-  isFirstToday?: boolean
   patient: {
     id: string
     full_name: string
@@ -48,19 +41,36 @@ type ReplyContext = {
   }[]
 }
 
+export type BookingResult = {
+  name: string
+  phone: string
+  date: string
+  time: string
+  service: string
+} | null
+
+export type RebookResult = {
+  patient_name: string
+  phone: string
+  requested_date: string
+  requested_time: string
+  service?: string
+  notes?: string
+} | null
+
+export type AppointmentCancelResult = {
+  phone: string
+  appointment_date?: string
+  reason?: string
+} | null
+
 export async function generateClaudeReply(ctx: ReplyContext): Promise<{
   reply: string
-  booking: { name: string; phone: string; date: string; time: string; service: string } | null
+  booking: BookingResult
+  rebook: RebookResult
+  appointment_cancelled: AppointmentCancelResult
 }> {
-  const {
-    messageText,
-    patient,
-    lead,
-    allVisits,
-    conversationHistory,
-    isFirstEverContact,
-    isFirstToday,
-  } = ctx
+  const { messageText, patient, lead, allVisits, conversationHistory } = ctx
 
   // ── Build patient context string ─────────────────────────
   let patientContext = ''
@@ -70,7 +80,8 @@ export async function generateClaudeReply(ctx: ReplyContext): Promise<{
 PATIENT RECORD:
 - Name: ${patient.full_name}
 - Date of birth: ${patient.date_of_birth ?? 'not on file'}
-- Known patient: Yes`
+- Known patient: Yes (registered in our system)
+- IMPORTANT: You already know this patient's name. Do NOT ask for their name.`
 
     if (allVisits && allVisits.length > 0) {
       patientContext += `\n\nVISIT HISTORY (most recent first):`
@@ -86,8 +97,8 @@ PATIENT RECORD:
 Visit ${i + 1} (${visitDate}):
 - Diagnosis: ${visit.diagnosis ?? 'not recorded'}
 - Prescribed medications: ${meds.length > 0
-            ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ')
-            : 'none'}
+          ? meds.map((m: any) => `${m.name} ${m.freq ?? ''}`).join(', ')
+          : 'none'}
 - Doctor's notes: ${visit.notes ?? 'none'}
 - Follow-up scheduled: ${visit.follow_up_date ?? 'none'}`
       })
@@ -109,12 +120,35 @@ UNKNOWN CONTACT:
   }
 
   // ── Determine session context ────────────────────────────
+  // First-ever contact: no history at all
+  // First today: has history but none from today (WAT date)
+  const todayWAT = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10)
+  const hasAnyHistory = conversationHistory.length > 0
+  const hasTodayHistory = conversationHistory.some(h => h.created_at.startsWith(todayWAT))
+  const isFirstEverContact = !hasAnyHistory
+  const isFirstToday = hasAnyHistory && !hasTodayHistory
+
   // Nigeria time (WAT = UTC+1)
   const now = new Date()
-  const hour = new Date(now.getTime() + 60 * 60 * 1000).getUTCHours()
+  const watOffset = 60 * 60 * 1000
+  const watNow = new Date(now.getTime() + watOffset)
+  const hour = watNow.getUTCHours()
   const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
 
+  // ── Inject real current date ─────────────────────────────
+  const currentDate = watNow.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC', // already adjusted above
+  })
+  // e.g. "Monday, 5 October 2026"
+
   const patientName = patient?.full_name ?? lead?.full_name ?? ''
+
+  // ── Is this a known patient (drives rebook vs lead routing) ──
+  const isKnownPatient = patient !== null
 
   // ── Load system prompt from markdown file ────────────────
   const systemPrompt = await loadClinicPrompt('olu-eye-clinic', {
@@ -128,22 +162,16 @@ UNKNOWN CONTACT:
     is_first_today: isFirstToday ? 'true' : 'false',
     time_of_day: timeOfDay,
     patient_name: patientName,
+    current_date: currentDate,
+    is_known_patient: isKnownPatient ? 'true' : 'false',
   })
 
   // ── Build conversation history for Claude ────────────────
-  // Only real dialogue turns. Drop 'system' rows (automated sends, delivery-
-  // failure logs, thank-you replicas) and anything with empty content —
-  // otherwise a logged system line becomes an invalid messages[] entry and the
-  // API rejects the whole request ("messages.0 ... content" error). This also
-  // keeps the array starting with a real patient 'user' turn.
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
-    ...conversationHistory
-      .filter(h => (h.role === 'user' || h.role === 'assistant') && h.message?.trim())
-      .map(h => ({
-        role: h.role as 'user' | 'assistant',
-        content: h.message,
-      })),
-    // Current incoming message
+    ...conversationHistory.map(h => ({
+      role: h.role as 'user' | 'assistant',
+      content: h.message,
+    })),
     {
       role: 'user' as const,
       content: messageText,
@@ -160,9 +188,9 @@ UNKNOWN CONTACT:
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 400,
+      max_tokens: 1024, // reply text + hidden JSON block must both fit
       system: systemPrompt,
-      messages, // ← full conversation history now
+      messages,
     }),
   })
 
@@ -173,24 +201,58 @@ UNKNOWN CONTACT:
     return {
       reply: `Sorry, we're experiencing a brief issue. Please call us on 09166015438 or try again in a moment.`,
       booking: null,
+      rebook: null,
+      appointment_cancelled: null,
     }
   }
 
   const fullReply = data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`
+  console.log('🔍 FULL IRIS REPLY:', JSON.stringify(fullReply))
+  // ── Extract structured blocks ────────────────────────────
+  const booking = isKnownPatient ? null : extractBookingFromReply(fullReply)
+  const rebook = isKnownPatient ? extractRebookFromReply(fullReply) : null
+  const appointment_cancelled = extractCancellationFromReply(fullReply)
 
-  const booking = extractBookingFromReply(fullReply)
-  const cleanReply = fullReply.replace(/\[BOOKING_CONFIRMED\][\s\S]*?\[\/BOOKING_CONFIRMED\]/, '').trim()
+  // Strip all hidden blocks from the reply sent to the patient
+  const cleanReply = fullReply
+    .replace(/\[BOOKING_CONFIRMED\][\s\S]*?\[\/BOOKING_CONFIRMED\]/g, '')
+    .replace(/\[REBOOK_REQUEST\][\s\S]*?\[\/REBOOK_REQUEST\]/g, '')
+    .replace(/\[APPOINTMENT_CANCELLED\][\s\S]*?\[\/APPOINTMENT_CANCELLED\]/g, '')
+    .trim()
 
   return {
     reply: cleanReply,
     booking,
+    rebook,
+    appointment_cancelled,
   }
 }
 
-export function extractBookingFromReply(fullReply: string) {
+// ── Extractors ───────────────────────────────────────────────
+
+export function extractBookingFromReply(fullReply: string): BookingResult {
   const match = fullReply.match(/\[BOOKING_CONFIRMED\]([\s\S]*?)\[\/BOOKING_CONFIRMED\]/)
   if (!match) return null
+  try {
+    return JSON.parse(match[1].trim())
+  } catch {
+    return null
+  }
+}
 
+export function extractRebookFromReply(fullReply: string): RebookResult {
+  const match = fullReply.match(/\[REBOOK_REQUEST\]([\s\S]*?)\[\/REBOOK_REQUEST\]/)
+  if (!match) return null
+  try {
+    return JSON.parse(match[1].trim())
+  } catch {
+    return null
+  }
+}
+
+export function extractCancellationFromReply(fullReply: string): AppointmentCancelResult {
+  const match = fullReply.match(/\[APPOINTMENT_CANCELLED\]([\s\S]*?)\[\/APPOINTMENT_CANCELLED\]/)
+  if (!match) return null
   try {
     return JSON.parse(match[1].trim())
   } catch {

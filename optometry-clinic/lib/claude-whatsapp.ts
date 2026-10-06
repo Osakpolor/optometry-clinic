@@ -119,14 +119,14 @@ PATIENT RECORD:
               weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
             })
           : 'a date to be confirmed'
-        patientContext += `\n\nREBOOKING STATUS: This patient previously had a rescheduling request that was APPROVED for ${rebookDate}${pendingRebook.requested_time ? ` at ${pendingRebook.requested_time}` : ''}. If the patient is asking about that appointment, confirm it was approved. HOWEVER — if the patient now wants to reschedule to a DIFFERENT date, accept the new request normally and emit a [REBOOK_REQUEST] block with the new date. Patients are allowed to change their appointment as many times as they need.`
+        patientContext += `\n\nREBOOKING STATUS: This patient's existing appointment is on ${rebookDate}${pendingRebook.requested_time ? ` at ${pendingRebook.requested_time}` : ''}. This is the date they ALREADY have. If they only ask about their current status, you may state this date. BUT if they are now asking to move/reschedule again, treat ${rebookDate} as the OLD date they want to LEAVE — do not repeat it back as their new appointment. Work out the NEW date they are asking for ("today", "tomorrow", "next Monday" → calculate the real date from Today's date), emit a [REBOOK_REQUEST] block with that NEW date, and make sure your confirmation message states the NEW date, NOT ${rebookDate}. Patients may reschedule as many times as they need.`
       } else if (pendingRebook.status === 'pending') {
         const rebookDate = pendingRebook.requested_date
           ? new Date(pendingRebook.requested_date).toLocaleDateString('en-GB', {
               weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
             })
           : 'a date to be confirmed'
-        patientContext += `\n\nREBOOKING STATUS: This patient has a PENDING rescheduling request for ${rebookDate} that our team hasn't confirmed yet. If the patient is asking about its status, tell them it's still being processed. HOWEVER — if the patient now wants to change to a DIFFERENT date, accept the new date and emit a [REBOOK_REQUEST] block with the updated date. This will replace the previous pending request. Patients are allowed to change their appointment as many times as they need.`
+        patientContext += `\n\nREBOOKING STATUS: This patient has a PENDING rescheduling request for ${rebookDate} awaiting team confirmation. If they only ask about its status, tell them it's still being processed. BUT if they now want a DIFFERENT date, treat ${rebookDate} as the OLD request they want to LEAVE — do not repeat it back as their new appointment. Work out the NEW date they are asking for ("today", "tomorrow", "next Monday" → calculate the real date from Today's date), emit a [REBOOK_REQUEST] block with that NEW date (it replaces the previous pending request), and make sure your confirmation message states the NEW date, NOT ${rebookDate}. Patients may reschedule as many times as they need.`
       }
     }
 

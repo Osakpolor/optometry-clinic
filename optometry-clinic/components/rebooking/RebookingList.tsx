@@ -72,10 +72,25 @@ export default function RebookingList({ requests }: Props) {
     setLoadingId(req.id)
     try {
       // 1. Create appointment
-      // Combine date + time into a single timestamp (appointments.appointment_date is timestamptz)
-      const appointmentTimestamp = approvalForm.time
-        ? `${approvalForm.date}T${approvalForm.time}:00`
-        : `${approvalForm.date}T00:00:00`
+      // Convert time from "09:00 AM" (12h) to "09:00" (24h) if needed, then
+      // combine with date into a full timestamptz string.
+      function to24h(timeStr: string): string {
+        if (!timeStr) return '00:00'
+        // Already 24h format (HH:mm from <input type="time">)
+        if (/^\d{2}:\d{2}$/.test(timeStr)) return timeStr
+        // Parse 12h AM/PM format
+        const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+        if (!match) return '00:00'
+        let hours = parseInt(match[1], 10)
+        const mins = match[2]
+        const meridiem = match[3].toUpperCase()
+        if (meridiem === 'AM' && hours === 12) hours = 0
+        if (meridiem === 'PM' && hours !== 12) hours += 12
+        return `${String(hours).padStart(2, '0')}:${mins}`
+      }
+
+      const time24 = approvalForm.time ? to24h(approvalForm.time) : '00:00'
+      const appointmentTimestamp = `${approvalForm.date}T${time24}:00`
 
       const { data: appt, error: apptErr } = await supabase
         .from('appointments')
@@ -84,7 +99,7 @@ export default function RebookingList({ requests }: Props) {
           appointment_date: appointmentTimestamp,
           service_type:     req.service ?? 'Follow-up visit',
           notes:            req.notes ?? 'Rebook via WhatsApp',
-          status:           'scheduled',
+          status:           'booked',
         })
         .select('id')
         .single()

@@ -154,6 +154,23 @@ export default function RebookingList({ requests }: Props) {
         })
         .eq('id', req.id)
 
+      // 4. Send WhatsApp confirmation to patient
+      const formattedDate = new Date(approvalForm.date).toLocaleDateString('en-GB', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      })
+      const formattedTime = approvalForm.time
+        ? ` at ${approvalForm.time}`
+        : ''
+      const confirmMessage =
+        `Hi ${req.patient_name}, your appointment at Olu Eye Clinic has been confirmed for ${formattedDate}${formattedTime}. ` +
+        `Please arrive 10 minutes early. For enquiries call 09166015438. - Olu Eye Clinic`
+
+      await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: req.phone_number, message: confirmMessage }),
+      })
+
       console.log(`✅ Rebook approved for ${req.patient_name}`)
       router.refresh()
     } catch (err) {

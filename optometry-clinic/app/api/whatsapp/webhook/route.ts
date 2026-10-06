@@ -89,7 +89,6 @@ export async function POST(req: NextRequest) {
     const patient = patientMatches?.[0] ?? null
 
     // Only look up leads if NOT a known patient
-    // Known patients who want to rebook go through the rebook flow, not leads
     let lead = null
     if (!patient) {
       const { data: leadMatches } = await supabase
@@ -104,7 +103,11 @@ export async function POST(req: NextRequest) {
 
     let recentVisit = null
     let allVisits: any[] = []
+    let upcomingAppointments: { appointment_date: string; service_type: string | null; status: string }[] = []
+    let pendingRebook: { requested_date: string | null; requested_time: string | null; status: string } | null = null
+
     if (patient) {
+      // Visit history
       const { data: visits } = await supabase
         .from('visit_records')
         .select('visit_date, diagnosis, medications, follow_up_date, refraction, notes')
@@ -114,6 +117,31 @@ export async function POST(req: NextRequest) {
 
       allVisits = visits ?? []
       recentVisit = allVisits[0] ?? null
+
+      // Upcoming appointments — so Iris knows what's booked
+      const todayIso = new Date().toISOString()
+      const { data: appts } = await supabase
+        .from('appointments')
+        .select('appointment_date, service_type, status')
+        .eq('patient_id', patient.id)
+        .gte('appointment_date', todayIso)
+        .not('status', 'in', '("cancelled","completed")')
+        .order('appointment_date', { ascending: true })
+        .limit(3)
+
+      upcomingAppointments = appts ?? []
+
+      // Most recent rebook request (pending or approved) — so Iris knows
+      // not to create a duplicate and can answer status questions correctly
+      const { data: rebookRows } = await supabase
+        .from('rebook_requests')
+        .select('requested_date, requested_time, status')
+        .eq('patient_id', patient.id)
+        .in('status', ['pending', 'approved'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      pendingRebook = rebookRows?.[0] ?? null
     }
 
     // ── Load conversation history ────────────────────────────
@@ -134,6 +162,8 @@ export async function POST(req: NextRequest) {
       recentVisit,
       allVisits,
       conversationHistory: history ?? [],
+      upcomingAppointments,
+      pendingRebook,
     })
 
     // ── Save Claude's reply ──────────────────────────────────
@@ -147,8 +177,8 @@ export async function POST(req: NextRequest) {
     await sendWhatsAppMessage(fromNumber, reply)
 
     // ── Route: REBOOK from known patient ────────────────────
-    // Known patient asking to reschedule → rebook_requests table
-    if (patient && rebook && rebook.requested_date) {
+    // Only insert if there's no pending/approved rebook already (prevent duplicates)
+    if (patient && rebook && rebook.requested_date && !pendingRebook) {
       await supabase.from('rebook_requests').insert({
         patient_id:     patient.id,
         phone_number:   fromNumber,
@@ -164,7 +194,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Route: NEW LEAD from unknown/non-patient ─────────────
-    // Only save to leads if NOT a known patient
     if (!patient && booking && booking.name && booking.date) {
       const { data: existingLead } = await supabase
         .from('leads')
@@ -200,13 +229,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Handle patient cancellation via WhatsApp ─────────────
-    // Patient says they can't make it → mark their upcoming appointment
-    // so the cron stops sending reminders
     if (appointment_cancelled) {
-      const cancelPhoneVariants = getPhoneVariants(appointment_cancelled.phone ?? fromNumber)
-      const cancelPhoneOr = cancelPhoneVariants.map(p => `phone.eq.${p}`).join(',')
-
-      // Find their most recent upcoming appointment that hasn't been cancelled
       if (patient) {
         const today = new Date().toISOString().split('T')[0]
         const { data: upcomingAppts } = await supabase
@@ -214,7 +237,7 @@ export async function POST(req: NextRequest) {
           .select('id, appointment_date')
           .eq('patient_id', patient.id)
           .gte('appointment_date', today)
-          .eq('cancelled_by_patient', false)
+          .not('status', 'in', '("cancelled","completed")')
           .order('appointment_date', { ascending: true })
           .limit(1)
 
@@ -222,6 +245,7 @@ export async function POST(req: NextRequest) {
           await supabase
             .from('appointments')
             .update({
+              status:               'cancelled',
               cancelled_by_patient: true,
               cancellation_reason:  appointment_cancelled.reason ?? 'Patient cancelled via WhatsApp',
               cancelled_at:         new Date().toISOString(),

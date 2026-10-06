@@ -39,6 +39,18 @@ type ReplyContext = {
     message: string
     created_at: string
   }[]
+  // Upcoming confirmed appointments (booked/confirmed status)
+  upcomingAppointments: {
+    appointment_date: string
+    service_type: string | null
+    status: string
+  }[]
+  // Most recent rebook request for this patient (pending or approved)
+  pendingRebook: {
+    requested_date: string | null
+    requested_time: string | null
+    status: string
+  } | null
 }
 
 export type BookingResult = {
@@ -70,7 +82,7 @@ export async function generateClaudeReply(ctx: ReplyContext): Promise<{
   rebook: RebookResult
   appointment_cancelled: AppointmentCancelResult
 }> {
-  const { messageText, patient, lead, allVisits, conversationHistory } = ctx
+  const { messageText, patient, lead, allVisits, conversationHistory, upcomingAppointments, pendingRebook } = ctx
 
   // ── Build patient context string ─────────────────────────
   let patientContext = ''
@@ -82,6 +94,41 @@ PATIENT RECORD:
 - Date of birth: ${patient.date_of_birth ?? 'not on file'}
 - Known patient: Yes (registered in our system)
 - IMPORTANT: You already know this patient's name. Do NOT ask for their name.`
+
+    // ── Upcoming appointments ────────────────────────────────
+    if (upcomingAppointments && upcomingAppointments.length > 0) {
+      patientContext += `\n\nUPCOMING APPOINTMENTS:`
+      upcomingAppointments.forEach(appt => {
+        const apptDate = new Date(appt.appointment_date).toLocaleDateString('en-GB', {
+          weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        })
+        const apptTime = new Date(appt.appointment_date).toLocaleTimeString('en-GB', {
+          hour: '2-digit', minute: '2-digit', hour12: true
+        })
+        patientContext += `\n- ${apptDate} at ${apptTime} — ${appt.service_type ?? 'appointment'} (${appt.status})`
+      })
+    } else {
+      patientContext += `\n\nUPCOMING APPOINTMENTS: None currently booked.`
+    }
+
+    // ── Rebook request status ────────────────────────────────
+    if (pendingRebook) {
+      if (pendingRebook.status === 'approved') {
+        const rebookDate = pendingRebook.requested_date
+          ? new Date(pendingRebook.requested_date).toLocaleDateString('en-GB', {
+              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            })
+          : 'a date to be confirmed'
+        patientContext += `\n\nREBOOKING STATUS: This patient's rescheduling request has been APPROVED by our team. Their new appointment is on ${rebookDate}${pendingRebook.requested_time ? ` at ${pendingRebook.requested_time}` : ''}. If the patient asks about their appointment status, confirm it is booked and confirmed. Do NOT emit a [REBOOK_REQUEST] block — the rebooking is already complete.`
+      } else if (pendingRebook.status === 'pending') {
+        const rebookDate = pendingRebook.requested_date
+          ? new Date(pendingRebook.requested_date).toLocaleDateString('en-GB', {
+              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+            })
+          : 'a date to be confirmed'
+        patientContext += `\n\nREBOOKING STATUS: This patient already has a PENDING rescheduling request logged for ${rebookDate}. Our team has not yet confirmed it. Do NOT emit another [REBOOK_REQUEST] block — the request is already logged and awaiting staff approval. Tell the patient their request is received and the team will confirm shortly.`
+      }
+    }
 
     if (allVisits && allVisits.length > 0) {
       patientContext += `\n\nVISIT HISTORY (most recent first):`
@@ -120,8 +167,6 @@ UNKNOWN CONTACT:
   }
 
   // ── Determine session context ────────────────────────────
-  // First-ever contact: no history at all
-  // First today: has history but none from today (WAT date)
   const todayWAT = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10)
   const hasAnyHistory = conversationHistory.length > 0
   const hasTodayHistory = conversationHistory.some(h => h.created_at.startsWith(todayWAT))
@@ -143,7 +188,6 @@ UNKNOWN CONTACT:
     year: 'numeric',
     timeZone: 'UTC', // already adjusted above
   })
-  // e.g. "Monday, 5 October 2026"
 
   const patientName = patient?.full_name ?? lead?.full_name ?? ''
 
@@ -188,7 +232,7 @@ UNKNOWN CONTACT:
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024, // reply text + hidden JSON block must both fit
+      max_tokens: 1024,
       system: systemPrompt,
       messages,
     }),
@@ -207,7 +251,7 @@ UNKNOWN CONTACT:
   }
 
   const fullReply = data.content?.[0]?.text ?? `Thank you for your message. We'll be in touch shortly.`
-  console.log('🔍 FULL IRIS REPLY:', JSON.stringify(fullReply))
+
   // ── Extract structured blocks ────────────────────────────
   const booking = isKnownPatient ? null : extractBookingFromReply(fullReply)
   const rebook = isKnownPatient ? extractRebookFromReply(fullReply) : null

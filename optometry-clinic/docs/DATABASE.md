@@ -23,21 +23,48 @@ schema.
 
 ---
 
-## Repo layout note
+## Repo layout note — read this before running any git command
 
-The git repository root is the **parent** folder:
+The git repository root is the **parent** folder, not the app folder.
+Verified 12 Sep 2026 via `git rev-parse --show-toplevel`, which prints
+`C:/Users/Osakpolor Omoregie/Desktop/CLINIC Project`.
 
 ```
-CLINIC Project\            <- .git lives here
+CLINIC Project\            <- REPO ROOT (.git lives here)
 ├── optometry-clinic\      <- the Next.js app; supabase/ goes in here
 ├── website-olu-eye-clinic\
-├── other files & tokens\  <- MUST be git-ignored (root .gitignore)
-└── ...
+├── other files & tokens\  <- INSIDE the repo tree; must be ignored
+└── Branding\, Designs\, Images\, Proposals\ ...
 ```
 
-Because of this, a `.gitignore` inside `optometry-clinic` cannot exclude
-anything outside it. Ignore rules for sibling folders belong in a `.gitignore`
-at `CLINIC Project\`.
+There is no `.git` inside `optometry-clinic` — git walks up and finds the
+parent's. This is easy to forget because the GitHub remote is *named*
+`optometry-clinic`, which suggests the app folder is the repo. It is not: the
+remote contains everything under `CLINIC Project` that has been committed.
+
+Three rules that follow:
+
+- **Never run `git add .` or `git add -A` from `CLINIC Project`.** It would
+  stage branding, designs, proposals and the tokens folder. From inside
+  `optometry-clinic`, `git add .` is safe — it only stages from the current
+  directory downward.
+- **Pathspecs resolve relative to your current directory, not the repo root.**
+  `git ls-files "other files & tokens"` run from inside `optometry-clinic`
+  silently matches nothing and looks like an all-clear. Run repo-wide checks
+  from the repo root, or use `:(top)` pathspec magic.
+- **The `../other files & tokens/` line in `optometry-clinic/.gitignore` does
+  nothing.** Git patterns cannot escape upward with `../`. The rule belongs in a
+  `.gitignore` at `CLINIC Project\` containing:
+
+  ```
+  other files & tokens/
+  *.pem
+  .env
+  .env.*
+  ```
+
+Supabase CLI commands run from inside `optometry-clinic`; git commands that need
+to see the whole repo run from `CLINIC Project`.
 
 ---
 
@@ -71,8 +98,7 @@ it and read it — this is the first complete picture of the database in one pla
 Commit it:
 
 ```
-cd /d "C:\Users\Osakpolor Omoregie\Desktop\CLINIC Project"
-git add optometry-clinic/supabase
+git add supabase
 git commit -m "chore(db): capture live schema as baseline migration"
 git push
 ```

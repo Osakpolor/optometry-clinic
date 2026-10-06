@@ -119,7 +119,7 @@ export default function RebookingList({ requests }: Props) {
           .eq('patient_id', req.patient_id)
           .neq('id', appt.id) // don't cancel the one we just made
           .gte('appointment_date', today)
-          .eq('cancelled_by_patient', false)
+          .not('status', 'in', '("cancelled","completed")')
           .order('appointment_date', { ascending: true })
           .limit(1)
 
@@ -127,9 +127,10 @@ export default function RebookingList({ requests }: Props) {
           await supabase
             .from('appointments')
             .update({
+              status:               'cancelled',
               cancelled_by_patient: true,
-              cancellation_reason: 'Cancelled — replaced by rebook request',
-              cancelled_at: new Date().toISOString(),
+              cancellation_reason:  'Cancelled — replaced by rebook request',
+              cancelled_at:         new Date().toISOString(),
             })
             .eq('id', existingAppts[0].id)
         }

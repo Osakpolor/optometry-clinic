@@ -45,7 +45,7 @@ export default function RebookingList({ requests }: Props) {
   }>({
     date: '',
     time: '',
-    cancelPrevious: false,
+    cancelPrevious: true,
     note: '',
   })
 
@@ -110,30 +110,24 @@ export default function RebookingList({ requests }: Props) {
         return
       }
 
-      // 2. If receptionist wants to cancel a previous upcoming appointment
+      // 2. A reschedule REPLACES the patient's existing appointment(s).
+      //    Cancel every other upcoming, non-cancelled appointment so the
+      //    patient is left with exactly this new one. This also self-heals
+      //    any duplicates that piled up from earlier approvals.
       if (approvalForm.cancelPrevious && req.patient_id) {
         const today = new Date().toISOString().split('T')[0]
-        const { data: existingAppts } = await supabase
+        await supabase
           .from('appointments')
-          .select('id')
+          .update({
+            status:               'cancelled',
+            cancelled_by_patient: true,
+            cancellation_reason:  'Cancelled — replaced by rebook request',
+            cancelled_at:         new Date().toISOString(),
+          })
           .eq('patient_id', req.patient_id)
-          .neq('id', appt.id) // don't cancel the one we just made
+          .neq('id', appt.id) // keep the one we just made
           .gte('appointment_date', today)
           .not('status', 'in', '("cancelled","completed")')
-          .order('appointment_date', { ascending: true })
-          .limit(1)
-
-        if (existingAppts && existingAppts.length > 0) {
-          await supabase
-            .from('appointments')
-            .update({
-              status:               'cancelled',
-              cancelled_by_patient: true,
-              cancellation_reason:  'Cancelled — replaced by rebook request',
-              cancelled_at:         new Date().toISOString(),
-            })
-            .eq('id', existingAppts[0].id)
-        }
       }
 
       // 3. Mark rebook request as approved
@@ -341,7 +335,7 @@ export default function RebookingList({ requests }: Props) {
                         setApprovalForm({
                           date: req.requested_date ?? '',
                           time: req.requested_time ?? '',
-                          cancelPrevious: false,
+                          cancelPrevious: true,
                           note: '',
                         })
                       }}

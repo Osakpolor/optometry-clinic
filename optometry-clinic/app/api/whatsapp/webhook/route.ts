@@ -177,20 +177,41 @@ export async function POST(req: NextRequest) {
     await sendWhatsAppMessage(fromNumber, reply)
 
     // ── Route: REBOOK from known patient ────────────────────
-    // Only insert if there's no pending/approved rebook already (prevent duplicates)
-    if (patient && rebook && rebook.requested_date && !pendingRebook) {
-      await supabase.from('rebook_requests').insert({
-        patient_id:     patient.id,
-        phone_number:   fromNumber,
-        patient_name:   patient.full_name,
-        requested_date: rebook.requested_date,
-        requested_time: rebook.requested_time ?? null,
-        service:        rebook.service ?? null,
-        notes:          rebook.notes ?? null,
-        status:         'pending',
-      })
+    // Patients can reschedule as many times as they like.
+    // If an existing PENDING rebook exists → update it with the new date.
+    // If an existing APPROVED rebook exists → insert a new pending request
+    // (the patient is changing a date that was already confirmed).
+    // If no existing rebook → insert fresh.
+    if (patient && rebook && rebook.requested_date) {
+      if (pendingRebook && pendingRebook.status === 'pending') {
+        // Update the existing pending request in place
+        await supabase
+          .from('rebook_requests')
+          .update({
+            requested_date: rebook.requested_date,
+            requested_time: rebook.requested_time ?? null,
+            service:        rebook.service ?? null,
+            notes:          rebook.notes ?? null,
+          })
+          .eq('patient_id', patient.id)
+          .eq('status', 'pending')
 
-      console.log(`🔄 Rebook request saved for ${patient.full_name} on ${rebook.requested_date}`)
+        console.log(`🔄 Rebook request UPDATED for ${patient.full_name} → ${rebook.requested_date}`)
+      } else {
+        // Either no existing rebook, or the existing one is approved — insert new
+        await supabase.from('rebook_requests').insert({
+          patient_id:     patient.id,
+          phone_number:   fromNumber,
+          patient_name:   patient.full_name,
+          requested_date: rebook.requested_date,
+          requested_time: rebook.requested_time ?? null,
+          service:        rebook.service ?? null,
+          notes:          rebook.notes ?? null,
+          status:         'pending',
+        })
+
+        console.log(`🔄 Rebook request saved for ${patient.full_name} on ${rebook.requested_date}`)
+      }
     }
 
     // ── Route: NEW LEAD from unknown/non-patient ─────────────

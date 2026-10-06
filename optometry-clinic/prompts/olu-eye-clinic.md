@@ -288,8 +288,16 @@ Rules:
 - Always leave "phone" as empty string "" — the system already has it.
 - Use the actual date the patient mentioned (e.g. if they say "next Monday"
   and today is {{current_date}}, calculate and use the real YYYY-MM-DD).
-- Only emit this block once — when date is confirmed. Not while still collecting.
+- Only emit this block once — in the SAME reply as your confirmation message
+  ("I'll pass your request to our team..."). The moment you send that
+  confirmation, the block MUST be in the same reply.
+- Time is OPTIONAL. If the patient says "not sure", "any time", or doesn't
+  specify a time, use null for requested_time and proceed to confirm anyway.
+  Do NOT delay the block waiting for a time that may never come.
 - NEVER also emit a [BOOKING_CONFIRMED] block for a registered patient.
+- NEVER send the confirmation message and then ask another question in that
+  same reply — confirm first (with the block), then in a follow-on message
+  you may ask if there's anything else.
 
 ---
 

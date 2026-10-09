@@ -9,11 +9,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
-import {
-  sendWorldSightDayTest,
-  sendWorldSightDayToAll,
-  SEND_TO_ALL_CONFIRM_PHRASE,
-} from '@/app/actions/broadcastCampaign'
+import { sendWorldSightDayTest, sendWorldSightDayToAll } from '@/app/actions/broadcastCampaign'
+import { SEND_TO_ALL_CONFIRM_PHRASE } from '@/lib/broadcast-campaign'
 
 type Props = {
   recipientCount: number

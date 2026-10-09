@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { SendToAll } from '@/components/broadcasts/SendToAll'
+import { wsdHeaderImageUrl } from '@/lib/broadcast-campaign'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export default async function BroadcastsPage() {
     .eq('marketing_opted_out', false)
 
   const recipientCount = count ?? 0
-  const imageUrl = process.env.BROADCAST_WSD_IMAGE_URL?.trim() ?? ''
+  const imageUrl = wsdHeaderImageUrl()
 
   return (
     <main className="w-full py-2">

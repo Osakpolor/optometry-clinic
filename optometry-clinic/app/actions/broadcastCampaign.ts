@@ -14,21 +14,11 @@
 
 import { getUserRole, canManageBroadcasts } from '@/lib/auth/roles'
 import { sendBroadcastNow, type SendBroadcastResult } from '@/app/actions/broadcastActions'
-
-const WSD_CAMPAIGN = {
-  title: 'World Sight Day — free eye test',
-  templateName: 'wsd_free_eye_test_oct10_v3',
-  language: 'en',
-  bodyParams: ['{{first_name}}'],
-  buttonUrl: null as string | null,
-}
-
-// Typed exactly (case-insensitive) to unlock the send-to-all button.
-export const SEND_TO_ALL_CONFIRM_PHRASE = 'SEND TO ALL'
-
-function wsdImageUrl(): string {
-  return process.env.BROADCAST_WSD_IMAGE_URL?.trim() ?? ''
-}
+import {
+  WSD_CAMPAIGN,
+  SEND_TO_ALL_CONFIRM_PHRASE,
+  wsdHeaderImageUrl,
+} from '@/lib/broadcast-campaign'
 
 async function assertAdmin() {
   // sendBroadcastNow guards too; this fails fast before any work/validation.
@@ -45,7 +35,7 @@ export async function sendWorldSightDayTest(testPhone: string): Promise<SendBroa
   const phone = testPhone?.trim()
   if (!phone) return { ok: false, error: 'Enter a test phone number first.' }
 
-  const headerImageUrl = wsdImageUrl()
+  const headerImageUrl = wsdHeaderImageUrl()
   if (!headerImageUrl) {
     return { ok: false, error: 'Header image not configured — set BROADCAST_WSD_IMAGE_URL.' }
   }
@@ -66,7 +56,7 @@ export async function sendWorldSightDayToAll(confirmText: string): Promise<SendB
     return { ok: false, error: `Type "${SEND_TO_ALL_CONFIRM_PHRASE}" to confirm the send to all patients.` }
   }
 
-  const headerImageUrl = wsdImageUrl()
+  const headerImageUrl = wsdHeaderImageUrl()
   if (!headerImageUrl) {
     return { ok: false, error: 'Header image not configured — set BROADCAST_WSD_IMAGE_URL.' }
   }

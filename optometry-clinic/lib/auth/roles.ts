@@ -36,6 +36,12 @@ export function canManageStaff(role: string | null): boolean {
   return role === 'admin'
 }
 
+// Broadcasts are marketing sends to the whole patient base, so they are
+// admin-only — matching the admin-only RLS on the broadcasts tables.
+export function canManageBroadcasts(role: string | null): boolean {
+  return role === 'admin'
+}
+
 // Only admins can view the audit trail
 export function canViewAudit(role: string | null): boolean {
   return role === 'admin'

@@ -223,37 +223,20 @@ UNKNOWN CONTACT:
   ]
 
   // ── Call Claude API ──────────────────────────────────────
-  // Retry ONCE on 429 / 5xx: the morning campaign reply-burst can briefly hit
-  // the rate limit or Anthropic overload, and a single retry after a short
-  // pause recovers most of those before we fall back to the apology message.
-  const requestBody = JSON.stringify({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages,
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY!,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages,
+    }),
   })
-
-  const callClaude = () =>
-    fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-version': '2023-06-01',
-      },
-      body: requestBody,
-    })
-
-  let response = await callClaude()
-  // This reply is generated SYNCHRONOUSLY before the webhook acks Meta (see
-  // app/api/whatsapp/webhook/route.ts), so the retry must stay cheap. One retry,
-  // ≤1s, only on the two transient codes — 429 (rate limit) and 529 (overloaded).
-  // Everything else falls straight through to the fallback.
-  if (response.status === 429 || response.status === 529) {
-    console.warn(`Claude API ${response.status} — retrying once in 800ms`)
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    response = await callClaude()
-  }
 
   const data = await response.json()
 

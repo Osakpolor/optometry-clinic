@@ -341,11 +341,18 @@ opt-out button would do nothing.
 
 Before blasting ~2,000 people, the webhook MUST handle `type: 'button'`:
 - **Opt-out** → set `patients.marketing_opted_out = true` + `marketing_opted_out_at = now()`
-  and reply confirming. Match ROBUSTLY, case-insensitively: trigger opt-out when the button
-  text (or a typed message) CONTAINS "stop", "unsubscribe", or "cancel". Matching on the
-  substring (not the exact title "Stop promotions") means renaming the button later never
-  silently breaks the opt-out. This is a compliance requirement — the opt-out button is
-  printed on every marketing message.
+  and reply confirming. Match case-insensitively. This is a compliance requirement — the
+  opt-out button is printed on every marketing message.
+  - **DECISION (shipped, 9 Oct):** matching is split by SOURCE to protect the existing
+    appointment-cancellation flow.
+    - **Button taps** → substring match on "stop" / "unsubscribe" / "cancel". Button titles
+      are a controlled set, so a substring match is safe and survives renaming the button
+      (e.g. "Stop promotions" → "Cancel promotions").
+    - **Typed messages** → match only a leading "stop" / "unsubscribe"; a bare **"cancel" is
+      deliberately NOT a marketing opt-out**. Patients type "cancel my appointment", which
+      must reach Iris's cancellation flow — treating it as unsubscribe would both drop the
+      cancellation and silently opt them out. (Implemented in `isOptOutRequest()` in
+      `app/api/whatsapp/webhook/route.ts`.)
 - **A "book" / positive-intent button** (e.g. "Book my free test") → feed the button text
   into Iris's normal reply flow (the tap opens a 24-hour window, so Iris can respond
   conversationally and help them book).

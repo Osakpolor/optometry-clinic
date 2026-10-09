@@ -278,7 +278,7 @@ Each phase: small commits on `feature/broadcasts`, push, test on the preview URL
 ## 11. Campaign #1 — World Sight Day (template already created & APPROVED)
 
 Approved templates (names updated 9 Oct). There are now TWO, both the SAME shape —
-one body variable `{{1}}` = patient **first name**, fixed image header, static buttons:
+one body variable `{{1}}` = patient **first name**, a REQUIRED image header (supplied every send), static buttons:
 - **Campaign #1 (World Sight Day, for the 10th):** `wsd_free_eye_test_oct10_v3`, language `en`.
 - **Campaign #2 (non-urgent, send later):** `stay_connected_follow_v1`, language `en` —
   "follow our Facebook / join our WhatsApp Channel".
@@ -293,16 +293,21 @@ template: {
   name: broadcast.template_name,          // from the row, e.g. 'wsd_free_eye_test_oct10_v3'
   language: { code: broadcast.language },  // 'en'
   components: [
+    { type: 'header', parameters: [{ type: 'image', image: { link: broadcast.header_image_url } }] },
     { type: 'body', parameters: [{ type: 'text', text: firstName }] },
   ],
 }
 ```
 - Pass the **first name** (split `full_name` on the first space), to match "Hello Mary,".
-- No header component, no button component, no image upload — fixed header + static buttons.
-- **On the broadcast ROW for these templates, set `header_image_url = NULL` and
-  `button_url = NULL`.** The sender only adds a header/button component when those are
-  non-null; a template with a FIXED header + STATIC buttons must receive NEITHER, or Meta
-  rejects the send (parameter-count mismatch). This is the #1 cause of a failed test send.
+- These templates have a **REQUIRED IMAGE header** that must be supplied on EVERY send;
+  buttons are static (no button component).
+- **On the broadcast ROW, `header_image_url` MUST be a real public URL** (the campaign
+  banner uploaded to the `broadcast-media` bucket), **never NULL**. The sender only adds the
+  header component when `header_image_url` is non-null, so a NULL sends no header and Meta
+  rejects it with `header: Format mismatch, expected IMAGE, received UNKNOWN` (error #132012).
+  `button_url` stays NULL (static buttons → no button component).
+  **CORRECTION:** an earlier draft here said to set `header_image_url = NULL`; that was WRONG
+  for these image-header templates and was the real cause of the failed test send.
 - **Messaging controls:** respect `isAllowedRecipient` (test-mode allowlist) ALWAYS, AND
   keep the `automated_sends_enabled` gate — for a 2,000-person marketing blast that global
   switch is a useful emergency brake (flip it off to halt an in-flight drain). Trade-off:

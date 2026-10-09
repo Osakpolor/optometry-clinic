@@ -30,7 +30,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getUserRole, canManageBroadcasts } from '@/lib/auth/roles'
 import { formatNigerianPhone } from '@/lib/whatsapp'
-import { getPhoneVariants } from '@/lib/phone-utils'
+import { getPhoneVariants, normalizePhone } from '@/lib/phone-utils'
 
 // How many patient rows to read per page. PostgREST caps a single read at 1000,
 // so we page with .range() even for the service-role client.
@@ -238,6 +238,9 @@ export async function sendBroadcastNow(input: SendBroadcastInput): Promise<SendB
   //    filter; skip any row without a valid Nigerian phone.
   let recipients: { broadcast_id: string; patient_id: string; phone: string; status: 'queued' }[] = []
   let offset = 0
+  // Canonical numbers already queued — so one physical phone is enqueued once,
+  // even when two patient records hold it in different formats (08… vs 234…).
+  const seen = new Set<string>()
 
   try {
     // Loop pages until a short page signals the end.
@@ -260,6 +263,9 @@ export async function sendBroadcastNow(input: SendBroadcastInput): Promise<SendB
 
       for (const p of page as { id: string; phone: string | null }[]) {
         if (!p.phone || !formatNigerianPhone(p.phone)) continue // skip unreachable rows
+        const canon = normalizePhone(p.phone)
+        if (!canon || seen.has(canon)) continue // one row per physical number
+        seen.add(canon)
         recipients.push({
           broadcast_id: broadcastId,
           patient_id: p.id,

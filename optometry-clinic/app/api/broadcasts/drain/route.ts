@@ -36,6 +36,22 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Derive a safe first name from a patient's full_name for the {{first_name}}
+// token. Meta rejects an empty {{1}}, so fall back to a neutral greeting. Strip
+// newlines/tabs and collapse whitespace — WhatsApp template body params reject
+// them (same hazard as formatPrescriptions in lib/whatsapp.ts).
+function firstNameFrom(fullName: string | null | undefined): string {
+  const cleaned = (fullName ?? '').replace(/[\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  const first = cleaned.split(' ')[0] ?? ''
+  return first || 'there'
+}
+
+// Replace supported personalisation tokens in each body param with THIS
+// recipient's values. Currently only {{first_name}}; add future tokens here.
+function resolvePersonalisedParams(rawParams: string[], firstName: string): string[] {
+  return rawParams.map((p) => p.replace(/\{\{first_name\}\}/g, firstName))
+}
+
 // Fire-and-forget trigger for the next batch. We do NOT await the child's work —
 // awaiting would nest the whole chain into one long-lived request and time out.
 function triggerNext(origin: string, broadcastId: string) {
@@ -80,7 +96,7 @@ export async function GET(req: NextRequest) {
   //    opted-out patients, but one may have sent STOP since being enqueued.
   const { data: batch, error: batchErr } = await admin
     .from('broadcast_recipients')
-    .select('id, phone, patient_id, patients(marketing_opted_out)')
+    .select('id, phone, patient_id, patients(marketing_opted_out, full_name)')
     .eq('broadcast_id', broadcast.id)
     .eq('status', 'queued')
     .order('id', { ascending: true })
@@ -92,15 +108,17 @@ export async function GET(req: NextRequest) {
 
   const settings = await getSettings()
 
-  const bodyParams: string[] = Array.isArray(broadcast.body_params)
+  // Raw, UNresolved params as stored on the broadcast — may contain tokens like
+  // "{{first_name}}". These are personalised per recipient inside the loop.
+  const rawParams: string[] = Array.isArray(broadcast.body_params)
     ? broadcast.body_params.map((v: any) => String(v))
     : []
 
-  const input: BroadcastSendInput = {
+  // Constant parts of the send; bodyParams are resolved PER recipient below.
+  const baseInput: Omit<BroadcastSendInput, 'bodyParams'> = {
     templateName: broadcast.template_name,
     language: broadcast.language ?? 'en',
     headerImageUrl: broadcast.header_image_url ?? null,
-    bodyParams,
     buttonUrl: broadcast.button_url ?? null,
     title: broadcast.title,
   }
@@ -119,6 +137,13 @@ export async function GET(req: NextRequest) {
         .eq('id', r.id)
       processed++
       continue
+    }
+
+    // Personalise {{first_name}} (and any future tokens) for THIS recipient.
+    const firstName = firstNameFrom(patient?.full_name)
+    const input: BroadcastSendInput = {
+      ...baseInput,
+      bodyParams: resolvePersonalisedParams(rawParams, firstName),
     }
 
     const result = await sendBroadcastTemplate(r.phone, input, settings)

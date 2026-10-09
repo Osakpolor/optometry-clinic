@@ -8,6 +8,7 @@
 // has no RLS policy for browsers — writes go through an admin-gated action.
 
 import { createClient } from '@supabase/supabase-js'
+import { normalizePhone } from '@/lib/phone-utils'
 
 export type AppSettings = {
   ai_enabled: boolean               // Iris replies to inbound WhatsApp messages
@@ -65,12 +66,26 @@ export async function getSettings(): Promise<AppSettings> {
 
 // Should a given phone receive a send right now?
 // Normal mode: everyone. Test mode: only numbers on the allowlist.
-// Loose match (endsWith both ways) so 234.../0.../local formats all line up.
+//
+// Matching canonicalises BOTH sides to the bare 10-digit local number via the
+// shared normalizePhone() helper, so the Nigerian trunk-zero and country-code
+// forms line up: 2348118143211, +2348118143211, 08118143211 and 8118143211 all
+// compare equal. A plain endsWith check does NOT line these up — the last 11
+// digits of 2348118143211 are "48118143211", never "08118143211" — which is the
+// exact mismatch that made a real allowlisted number look un-allowlisted at send
+// time while the dry-run (checking the already-234 input) said it was allowed.
+//
+// The looser endsWith comparison is kept as a fallback so any number that
+// matched before still matches: this change only ever ADDS matches (it fixes a
+// false negative), never removes one — allowlist behaviour stays fail-safe.
 export function isAllowedRecipient(phone: string, s: AppSettings): boolean {
   if (!s.test_mode) return true
+  const canon = normalizePhone(phone)
   const digits = phone.replace(/\D/g, '')
-  if (!digits) return false
+  if (!canon && !digits) return false
   return s.test_numbers.some(n => {
+    const nCanon = normalizePhone(n)
+    if (canon && nCanon && canon === nCanon) return true
     const nd = n.replace(/\D/g, '')
     if (!nd) return false
     return digits.endsWith(nd) || nd.endsWith(digits)

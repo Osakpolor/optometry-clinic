@@ -5,6 +5,21 @@ import { sendWhatsAppMessage } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
 import { getPhoneVariants } from '@/lib/phone-utils'
 
+// Marketing opt-out detection. Button titles are controlled values, so a
+// substring match is safe there (and survives renaming "Stop promotions" →
+// "Cancel promotions"). For TYPED messages we match only unambiguous unsubscribe
+// commands and deliberately EXCLUDE a bare "cancel": patients type "cancel my
+// appointment", which must reach Iris's cancellation flow, not silently
+// unsubscribe them from marketing.
+function isOptOutRequest(text: string, isButtonTap: boolean): boolean {
+  const t = text.toLowerCase()
+  if (isButtonTap) {
+    return t.includes('stop') || t.includes('unsubscribe') || t.includes('cancel')
+  }
+  const normalized = t.replace(/[^a-z\s]/g, '').trim()
+  return /^(stop|unsubscribe)\b/.test(normalized)
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const mode      = searchParams.get('hub.mode')
@@ -32,18 +47,65 @@ export async function POST(req: NextRequest) {
 
     const message     = messages[0]
     const fromNumber  = message.from
-    const messageText = message.text?.body
     const messageType = message.type
 
-    if (messageType !== 'text' || !messageText) {
+    // Normalize inbound text from either a typed message OR a tapped template
+    // quick-reply button. Quick-reply taps arrive as type:'button' with
+    // message.button.text = the button title (NOT type:'text'), so the old
+    // `type !== 'text'` guard silently dropped them — including opt-out. (Brief §12.)
+    const messageText =
+      messageType === 'text'
+        ? message.text?.body
+        : messageType === 'button'
+          ? message.button?.text
+          : undefined
+
+    // Any other inbound type (image, audio, etc.) is still ignored, as before.
+    if (!messageText) {
       return NextResponse.json({ status: 'ok' })
     }
 
-    console.log(`📱 Message from ${fromNumber}: ${messageText}`)
+    const isButtonTap = messageType === 'button'
+    console.log(`📱 ${isButtonTap ? 'Button tap' : 'Message'} from ${fromNumber}: ${messageText}`)
 
     // Use admin client for webhook — cookie client won't work here (no session)
     const supabase = createAdminClient()
     const receivedAt = new Date().toISOString()
+    const phoneVariants = getPhoneVariants(fromNumber)
+    const phoneOrClause = phoneVariants.map(p => `phone.eq.${p}`).join(',')
+
+    // ── Save incoming message (so button taps show in the thread too) ─────────
+    await supabase.from('whatsapp_conversations').insert({
+      phone_number: fromNumber,
+      role: 'user',
+      message: messageText,
+    })
+
+    // ── MARKETING OPT-OUT (compliance) ───────────────────────
+    // A tapped "Stop promotions" button — or a typed stop/unsubscribe — opts the
+    // patient out of MARKETING only (appointment reminders still send). Handled
+    // up front, before the debounce + Iris: an opt-out needs an immediate,
+    // deterministic reply, never an AI-generated one. The tap/typed message opens
+    // a 24h window, so the free-form confirmation below is deliverable.
+    if (isOptOutRequest(messageText, isButtonTap)) {
+      await supabase
+        .from('patients')
+        .update({ marketing_opted_out: true, marketing_opted_out_at: receivedAt })
+        .or(phoneOrClause)
+        .is('deleted_at', null)
+
+      const optOutReply =
+        `You've been unsubscribed from Olu Eye Clinic promotional messages. ` +
+        `You'll still receive appointment reminders, and you can reply here anytime. - OluEyeClnc`
+      await supabase.from('whatsapp_conversations').insert({
+        phone_number: fromNumber,
+        role: 'assistant',
+        message: optOutReply,
+      })
+      await sendWhatsAppMessage(fromNumber, optOutReply)
+      console.log(`🚫 Marketing opt-out recorded for ${fromNumber}`)
+      return NextResponse.json({ status: 'ok' })
+    }
 
     // ── Record message arrival time ──────────────────────────
     await supabase
@@ -52,13 +114,6 @@ export async function POST(req: NextRequest) {
         phone_number: fromNumber,
         last_message_at: receivedAt,
       }, { onConflict: 'phone_number' })
-
-    // ── Save incoming message ────────────────────────────────
-    await supabase.from('whatsapp_conversations').insert({
-      phone_number: fromNumber,
-      role: 'user',
-      message: messageText,
-    })
 
     // ── Wait 6 seconds for more messages ────────────────────
     await new Promise(resolve => setTimeout(resolve, 6000))
@@ -76,9 +131,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Load patient or lead ─────────────────────────────────
-    const phoneVariants = getPhoneVariants(fromNumber)
-    const phoneOrClause = phoneVariants.map(p => `phone.eq.${p}`).join(',')
-
+    // (phoneVariants / phoneOrClause computed above, before the opt-out check.)
     const { data: patientMatches } = await supabase
       .from('patients')
       .select('id, full_name, phone, date_of_birth')

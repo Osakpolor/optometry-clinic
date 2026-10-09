@@ -68,8 +68,12 @@ Two product decisions already made:
 ## 3. SaaS / multi-tenant readiness (do the cheap half now)
 
 Vision is to make this EMR multi-tenant later. For THIS module:
-- **Do now (cheap):** add a `clinic_id` column to every new table, and create a `clinics`
-  table with one row for Olu. This means tenant-scoping is already in the schema.
+- **Do now (cheap):** put `clinic_id` on the top-level `broadcasts` table (the campaign),
+  and create a `clinics` table with one row for Olu. `broadcast_recipients` does NOT carry
+  its own `clinic_id` — a recipient's tenant is derived from its parent broadcast, avoiding
+  a duplicated column that could drift. When per-tenant RLS is actually built, denormalising
+  `clinic_id` onto `broadcast_recipients` (to simplify those policies) is a one-line add at
+  that point. This supersedes any earlier "clinic_id on every new table" wording.
 - **Do NOT do now:** per-clinic WhatsApp credentials, tenant onboarding, billing/metering,
   RLS-by-tenant on existing tables. In v1 the sender keeps reading the existing env vars
   (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TOKEN`) — leave a `// TODO(multi-tenant): read
@@ -268,3 +272,94 @@ Each phase: small commits on `feature/broadcasts`, push, test on the preview URL
 - Keep marketing sends inside the existing `automated_sends_enabled` + test-mode controls.
 - Throttle (the BATCH_SIZE + self-chain) to protect the number's quality rating.
 - Log every send via `logWhatsAppMessage()` so staff see broadcasts in Conversations.
+
+---
+
+## 11. Campaign #1 — World Sight Day (template already created & APPROVED)
+
+Approved templates (names updated 9 Oct). There are now TWO, both the SAME shape —
+one body variable `{{1}}` = patient **first name**, fixed image header, static buttons:
+- **Campaign #1 (World Sight Day, for the 10th):** `wsd_free_eye_test_oct10_v3`, language `en`.
+- **Campaign #2 (non-urgent, send later):** `stay_connected_follow_v1`, language `en` —
+  "follow our Facebook / join our WhatsApp Channel".
+
+**The sender must be template-AGNOSTIC: read `template_name` (and language) from the
+`broadcasts` row, do NOT hardcode a template name.** Because both templates share the
+"one body var = first name, fixed header, static buttons" shape, a single body-only sender
+covers both — and any future template of the same shape — with zero code changes. The only
+assumption baked into the code is that one body variable, the first name. Send payload:
+```ts
+template: {
+  name: broadcast.template_name,          // from the row, e.g. 'wsd_free_eye_test_oct10_v3'
+  language: { code: broadcast.language },  // 'en'
+  components: [
+    { type: 'body', parameters: [{ type: 'text', text: firstName }] },
+  ],
+}
+```
+- Pass the **first name** (split `full_name` on the first space), to match "Hello Mary,".
+- No header component, no button component, no image upload — fixed header + static buttons.
+- **On the broadcast ROW for these templates, set `header_image_url = NULL` and
+  `button_url = NULL`.** The sender only adds a header/button component when those are
+  non-null; a template with a FIXED header + STATIC buttons must receive NEITHER, or Meta
+  rejects the send (parameter-count mismatch). This is the #1 cause of a failed test send.
+- **Messaging controls:** respect `isAllowedRecipient` (test-mode allowlist) ALWAYS, AND
+  keep the `automated_sends_enabled` gate — for a 2,000-person marketing blast that global
+  switch is a useful emergency brake (flip it off to halt an in-flight drain). Trade-off:
+  it must be ON when you send, or every recipient is skipped. Your test-to-own-number send
+  will reveal it immediately (you'll see "skipped: automated sends disabled"). (This updates
+  the earlier "need not be gated" note — on reflection the kill-switch is worth keeping.)
+- For testing keep **test mode ON + your own number allowlisted**; turn test mode OFF for
+  the real blast.
+- **Opt-out exclusion lives at ENQUEUE, not in the sender:** the send-now action must build
+  the recipient list with `marketing_opted_out = false`. The sender does not re-check it.
+- This is a MANUAL admin send, so mirror `sendVisitSummaryWhatsApp`: respect the test-mode
+  allowlist (`isAllowedRecipient`) ALWAYS, but it need not be gated by
+  `automated_sends_enabled`. For testing keep **test mode ON + your own number allowlisted**;
+  turn test mode OFF for the real blast.
+
+**MVP scope for this campaign (to hit the 10 Oct deadline):**
+- Skip the image upload and template picker in the UI — not needed (fixed header).
+- Skip Phase 5 (scheduling) entirely — use Send-now, clicked manually on the 9th and 10th.
+- The UI can be ONE minimal admin page: show the recipient count, a **"Send test to my
+  number"** button, and a **"Send to all (excluding opted-out)"** button. The full composer
+  can come later.
+
+## 12. CRITICAL — the quick-reply buttons change the webhook (DO THIS before the real blast)
+
+Tapping a template quick-reply button does NOT arrive as a normal text message. WhatsApp
+delivers an incoming message of **`type: 'button'`** with `message.button.text` = the button
+title (e.g. "Stop promotions" / "Book my free exam") and a payload. The CURRENT webhook
+(`app/api/whatsapp/webhook/route.ts`) returns early for anything that isn't
+`type: 'text'`, so **these taps are silently ignored today.** That means right now the
+opt-out button would do nothing.
+
+Before blasting ~2,000 people, the webhook MUST handle `type: 'button'`:
+- **Opt-out** → set `patients.marketing_opted_out = true` + `marketing_opted_out_at = now()`
+  and reply confirming. Match ROBUSTLY, case-insensitively: trigger opt-out when the button
+  text (or a typed message) CONTAINS "stop", "unsubscribe", or "cancel". Matching on the
+  substring (not the exact title "Stop promotions") means renaming the button later never
+  silently breaks the opt-out. This is a compliance requirement — the opt-out button is
+  printed on every marketing message.
+- **A "book" / positive-intent button** (e.g. "Book my free test") → feed the button text
+  into Iris's normal reply flow (the tap opens a 24-hour window, so Iris can respond
+  conversationally and help them book).
+
+This is part of Phase 3 and is **NOT optional** for this campaign: a live opt-out button
+that does nothing is both a compliance problem and a trust problem.
+
+## 13. Tightened phase order for the 10 Oct deadline
+
+1. **Phase 1:** schema only — `broadcasts`, `broadcast_recipients`, and the
+   `marketing_opted_out` / `marketing_opted_out_at` columns on `patients` (+ indexes),
+   saved as a versioned `.sql` file. (`clinics` table optional now; the `broadcast-media`
+   bucket can be DEFERRED — no image upload this campaign.)
+2. **Phase 2:** `lib/broadcasts.ts` body-only sender that reads `template_name`/`language`
+   from the broadcast row (template-agnostic; works for `wsd_free_eye_test_oct10_v3` and
+   `stay_connected_follow_v1` alike) + send-now server action + `/api/broadcasts/drain`.
+   Test to your own number first.
+3. **Phase 3 (required):** webhook `type: 'button'` handling → "Stop promotions" opt-out +
+   "Book my free exam" → Iris.
+4. **Phase 4 (minimal):** the one admin page (count / send test / send to all), admin-gated
+   via a new `canManageBroadcasts` + a Broadcasts nav link.
+5. Later: delivery-status tracking, full composer, scheduling, `clinics`/multi-tenant.

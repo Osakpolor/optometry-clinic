@@ -41,6 +41,7 @@ export default function DashboardNav({ isAdmin, isReceptionist = false }: Props)
     // Admin-only links
     ...(isAdmin
       ? [
+          { href: '/dashboard/broadcasts', label: 'Broadcasts' },
           { href: '/dashboard/staff', label: 'Staff' },
           { href: '/dashboard/audit', label: 'Audit' },
         ]

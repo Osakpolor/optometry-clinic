@@ -211,11 +211,19 @@ UNKNOWN CONTACT:
   })
 
   // ── Build conversation history for Claude ────────────────
+  // Only user/assistant turns go in `messages`. logWhatsAppMessage also records
+  // role:'system' rows (reminders, broadcast log lines, opt-out confirmations);
+  // feeding those in as {role:'system'} mid-conversation makes the Messages API
+  // reject the whole request (invalid_request_error: a 'system' message must
+  // follow a user/assistant message) — the real cause of Iris's "brief issue".
+  // The system prompt is passed separately via the top-level `system` param.
   const messages: { role: 'user' | 'assistant'; content: string }[] = [
-    ...conversationHistory.map(h => ({
-      role: h.role as 'user' | 'assistant',
-      content: h.message,
-    })),
+    ...conversationHistory
+      .filter(h => h.role === 'user' || h.role === 'assistant')
+      .map(h => ({
+        role: h.role as 'user' | 'assistant',
+        content: h.message,
+      })),
     {
       role: 'user' as const,
       content: messageText,

@@ -4,6 +4,10 @@
 // Minimal admin control for the World Sight Day blast: a live recipient count,
 // a "send test to me" button, and a guarded "send to all" that only unlocks
 // once the admin types the confirmation phrase.
+//
+// A click is NEVER silent: every send renders an inline result banner (success
+// or error) in the page itself. The toast() calls are kept too, but the banner
+// does not depend on a <Toaster> being mounted.
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -14,40 +18,60 @@ import { SEND_TO_ALL_CONFIRM_PHRASE } from '@/lib/broadcast-campaign'
 
 type Props = {
   recipientCount: number
-  imageUrl: string // '' when BROADCAST_WSD_IMAGE_URL is unset
+  imageUrl: string // '' when the header image is unresolved
 }
+
+type Result = { kind: 'success' | 'error'; text: string } | null
 
 export function SendToAll({ recipientCount, imageUrl }: Props) {
   const [testPhone, setTestPhone] = useState('')
   const [confirmText, setConfirmText] = useState('')
   const [loading, setLoading] = useState<'test' | 'all' | null>(null)
+  const [result, setResult] = useState<Result>(null)
 
   const imageConfigured = imageUrl.length > 0
   const confirmed = confirmText.trim().toUpperCase() === SEND_TO_ALL_CONFIRM_PHRASE
 
-  async function handleTest() {
-    if (!testPhone.trim()) {
-      toast.error('Enter a test phone number first.')
-      return
-    }
-    setLoading('test')
-    const res = await sendWorldSightDayTest(testPhone)
-    setLoading(null)
-    if (res.ok) toast.success(`Test queued to 1 number (${res.totalCount} recipient).`)
-    else toast.error(res.error)
+  function show(kind: 'success' | 'error', text: string) {
+    setResult({ kind, text })
+    if (kind === 'success') toast.success(text)
+    else toast.error(text)
   }
 
-  async function handleSendAll() {
-    if (!confirmed) return
-    setLoading('all')
-    const res = await sendWorldSightDayToAll(confirmText)
-    setLoading(null)
-    if (res.ok) {
-      toast.success(`World Sight Day queued to ${res.totalCount} patients — now sending.`)
-      setConfirmText('')
-    } else {
-      toast.error(res.error)
+  async function run(kind: 'test' | 'all') {
+    setLoading(kind)
+    setResult(null)
+    try {
+      const res =
+        kind === 'test'
+          ? await sendWorldSightDayTest(testPhone)
+          : await sendWorldSightDayToAll(confirmText)
+
+      if (res.ok) {
+        show(
+          'success',
+          kind === 'test'
+            ? `Test queued to ${res.totalCount} recipient — now sending.`
+            : `Queued to ${res.totalCount.toLocaleString()} patient(s) — now sending. In test mode, only allowlisted numbers actually receive it.`,
+        )
+        if (kind === 'all') setConfirmText('')
+      } else {
+        show('error', res.error)
+      }
+    } catch (e: unknown) {
+      // A thrown server action (e.g. auth failure) would otherwise hang silently.
+      show('error', e instanceof Error ? e.message : 'The send failed unexpectedly. Please try again.')
+    } finally {
+      setLoading(null)
     }
+  }
+
+  function handleTest() {
+    if (!testPhone.trim()) {
+      show('error', 'Enter a test phone number first.')
+      return
+    }
+    void run('test')
   }
 
   return (
@@ -62,15 +86,29 @@ export function SendToAll({ recipientCount, imageUrl }: Props) {
         </p>
       </div>
 
-      {/* Image config warning */}
+      {/* Inline result — the guarantee that a click is never silent */}
+      {result && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            result.kind === 'success'
+              ? 'border-brand/30 bg-brand/5 text-brand'
+              : 'border-destructive/30 bg-destructive/5 text-destructive'
+          }`}
+        >
+          {result.text}
+        </div>
+      )}
+
+      {/* Image config state */}
       {imageConfigured ? (
         <p className="text-xs text-muted-foreground break-all">
           Header image: <span className="text-gray-700">{imageUrl}</span>
         </p>
       ) : (
         <p className="text-xs text-destructive">
-          Header image not configured — set <code>BROADCAST_WSD_IMAGE_URL</code> before sending,
-          or Meta will reject every message.
+          Header image not configured — sends will be rejected by Meta.
         </p>
       )}
 
@@ -98,7 +136,7 @@ export function SendToAll({ recipientCount, imageUrl }: Props) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Must be a patient on file, and (in test mode) on the allowlist.
+          Must be a patient on file, not opted out, and (in test mode) on the allowlist.
         </p>
       </div>
 
@@ -121,7 +159,7 @@ export function SendToAll({ recipientCount, imageUrl }: Props) {
           type="button"
           size="sm"
           variant="destructive"
-          onClick={handleSendAll}
+          onClick={() => void run('all')}
           disabled={loading !== null || !confirmed || !imageConfigured || recipientCount === 0}
         >
           {loading === 'all' ? 'Sending…' : `Send to ${recipientCount.toLocaleString()} patients`}

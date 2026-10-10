@@ -327,3 +327,30 @@ export async function sendBroadcastNow(input: SendBroadcastInput): Promise<SendB
 
   return { ok: true, broadcastId, totalCount }
 }
+
+/**
+ * Resume/kick the drain for a stalled broadcast. Fire-and-forget, like the kick
+ * in sendBroadcastNow. With no broadcastId the drain picks the oldest broadcast
+ * still in 'sending'. Safe to call when nothing is stuck — the drain just reports
+ * "done". Admin-only.
+ */
+export async function kickDrain(broadcastId?: string): Promise<{ ok: boolean; error?: string }> {
+  const role = await getUserRole()
+  if (!canManageBroadcasts(role)) {
+    throw new Error('Not authorized: broadcasts are admin-only.')
+  }
+
+  const origin = await resolveOrigin()
+  const drainUrl = broadcastId
+    ? `${origin}/api/broadcasts/drain?broadcast_id=${encodeURIComponent(broadcastId)}`
+    : `${origin}/api/broadcasts/drain`
+
+  void fetch(drainUrl, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET!}` },
+    keepalive: true,
+  }).catch((e) => console.error('broadcast drain kick failed:', e))
+  await new Promise((r) => setTimeout(r, 500))
+
+  return { ok: true }
+}

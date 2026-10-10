@@ -13,17 +13,28 @@
 // Auth: Authorization: Bearer ${CRON_SECRET} — same as the reminders cron.
 // Access: service-role admin client (no user session; must bypass RLS).
 //
-// Idempotency / no double-send: the chain is linear — an invocation moves all of
-// its batch OUT of 'queued' (to sent/failed/capped/skipped) BEFORE triggering its
-// single successor, so the successor's "status = queued" query can never re-pick
-// a row this invocation already handled. (Do NOT run two drains for the same
-// broadcast concurrently — e.g. a manual trigger during an active chain — as that
-// reintroduces a select/update race. v1 never does this.)
+// No double-send under concurrency: each broadcast carries a drain LEASE
+// (broadcasts.drain_locked_until). An invocation must atomically acquire the
+// lease before processing; any other invocation — a self-triggered successor OR
+// a repeated "Resume" click landing during an active drain — finds a live lease
+// and bails. So two invocations can never select the same 'queued' rows and send
+// twice. Within the single holder, each batch leaves 'queued' before the next
+// select, so no row is re-picked either.
 //
-// Serverless caveat: the self-trigger is fire-and-forget with keepalive. This is
-// reliable in practice but not bulletproof on Hobby. The brief's documented
-// hardening (Vercel Pro per-minute cron, or Supabase pg_cron) is the long-term
-// fix; v1 stays self-chaining for zero extra cost.
+// Recovery: the lease EXCEEDS maxDuration, so a live invocation never loses it
+// mid-run; a DEAD invocation's lease simply expires, after which Resume (or the
+// next trigger) continues the still-'queued' rows. Rows are never parked in an
+// intermediate 'sending' state, so none can get stuck per-row.
+//
+// Residual at-least-once edge (not the bug reported): if an invocation sends to
+// ONE recipient and dies before marking that row, the row stays 'queued' and is
+// re-sent later — a single-row duplicate inherent to at-least-once delivery
+// without a provider dedup key. Vastly rarer than the concurrency race, and not
+// what repeated-Resume triggered.
+//
+// Serverless caveat: the self-trigger is still fire-and-forget with keepalive —
+// now far less exposed (a handful of hops, and Resume safely re-kicks). The
+// brief's Vercel Pro cron / Supabase pg_cron remains the long-term hardening.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
@@ -36,6 +47,8 @@ export const maxDuration = 60 // Hobby ceiling; the batch loop below stays under
 const BATCH_SIZE = 40
 const DELAY_MS = 150 // gentle pacing between sends, to protect the number's quality rating
 const TIME_BUDGET_MS = 45_000 // drain many batches per invocation, then hand off once
+const LOCK_LEASE_MS = 90_000 // drain lock lease; MUST exceed maxDuration so a live
+// invocation never loses its lock mid-run, yet a dead one's lock expires and frees.
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -82,18 +95,66 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const broadcastIdParam = url.searchParams.get('broadcast_id')
 
-  // 1. Choose the broadcast: the requested one, else the oldest still 'sending'.
-  let broadcast: any = null
-  {
-    let q = admin.from('broadcasts').select('*').eq('status', 'sending')
-    if (broadcastIdParam) q = q.eq('id', broadcastIdParam)
-    else q = q.order('created_at', { ascending: true }).limit(1)
-    const { data } = await q.maybeSingle()
-    broadcast = data
+  // 1. Pick the target broadcast: the requested one, else the oldest 'sending'.
+  let targetId = broadcastIdParam
+  if (!targetId) {
+    const { data: candidate } = await admin
+      .from('broadcasts')
+      .select('id')
+      .eq('status', 'sending')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    targetId = candidate?.id ?? null
+  }
+  if (!targetId) {
+    return NextResponse.json({ done: true, message: 'No broadcast in sending state.' })
   }
 
+  // 2. Acquire the per-broadcast drain lock ATOMICALLY, so only one invocation
+  //    ever processes a broadcast at a time — concurrent invocations (e.g.
+  //    repeated "Resume" clicks) can never select the same 'queued' rows and
+  //    double-send. The lock is a lease: we claim it only if it is unset OR
+  //    already expired, as a conditional UPDATE that just one concurrent writer
+  //    can win (Postgres re-evaluates the WHERE against the winner's committed
+  //    row under READ COMMITTED). Two tries cover "unset" then "expired".
+  const nowIso = new Date().toISOString()
+  const leaseIso = new Date(Date.now() + LOCK_LEASE_MS).toISOString()
+
+  const acquire = async () => {
+    const free = await admin
+      .from('broadcasts')
+      .update({ drain_locked_until: leaseIso })
+      .eq('id', targetId!)
+      .eq('status', 'sending')
+      .is('drain_locked_until', null)
+      .select('*')
+      .maybeSingle()
+    if (free.data) return free.data
+    const expired = await admin
+      .from('broadcasts')
+      .update({ drain_locked_until: leaseIso })
+      .eq('id', targetId!)
+      .eq('status', 'sending')
+      .lt('drain_locked_until', nowIso)
+      .select('*')
+      .maybeSingle()
+    return expired.data ?? null
+  }
+
+  const broadcast: any = await acquire()
   if (!broadcast) {
-    return NextResponse.json({ done: true, message: 'No broadcast in sending state.' })
+    // Not 'sending', or another live invocation holds the lock — bail quietly so
+    // repeated Resume clicks are harmless no-ops rather than duplicate senders.
+    return NextResponse.json({
+      skipped: true,
+      message: 'Broadcast not in sending state, or a drain is already running for it.',
+    })
+  }
+
+  // Release the lock (best-effort) on any exit path below.
+  const releaseLock = async () => {
+    await admin.from('broadcasts').update({ drain_locked_until: null }).eq('id', broadcast.id)
   }
 
   const settings = await getSettings()
@@ -136,6 +197,7 @@ export async function GET(req: NextRequest) {
       .limit(BATCH_SIZE)
 
     if (batchErr) {
+      await releaseLock() // don't hold the lease on an error exit
       return NextResponse.json({ error: batchErr.message }, { status: 500 })
     }
     if (!batch || batch.length === 0) break // queue drained
@@ -220,6 +282,9 @@ export async function GET(req: NextRequest) {
 
   const allDone = queuedLeft === 0
 
+  // Write counts/status AND release the lock in one update. Releasing before we
+  // trigger the successor lets it (or a Resume) acquire the now-free lock; the
+  // atomic acquire guarantees only one of them proceeds.
   await admin
     .from('broadcasts')
     .update({
@@ -230,6 +295,7 @@ export async function GET(req: NextRequest) {
       capped_count: capped,
       total_count: total,
       status: allDone ? 'sent' : 'sending',
+      drain_locked_until: null,
     })
     .eq('id', broadcast.id)
 

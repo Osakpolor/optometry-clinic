@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
 import { sendWorldSightDayTest, sendWorldSightDayToAll } from '@/app/actions/broadcastCampaign'
+import { kickDrain } from '@/app/actions/broadcastActions'
 import { SEND_TO_ALL_CONFIRM_PHRASE } from '@/lib/broadcast-campaign'
 
 type Props = {
@@ -26,7 +27,7 @@ type Result = { kind: 'success' | 'error'; text: string } | null
 export function SendToAll({ recipientCount, imageUrl }: Props) {
   const [testPhone, setTestPhone] = useState('')
   const [confirmText, setConfirmText] = useState('')
-  const [loading, setLoading] = useState<'test' | 'all' | null>(null)
+  const [loading, setLoading] = useState<'test' | 'all' | 'resume' | null>(null)
   const [result, setResult] = useState<Result>(null)
 
   const imageConfigured = imageUrl.length > 0
@@ -72,6 +73,26 @@ export function SendToAll({ recipientCount, imageUrl }: Props) {
       return
     }
     void run('test')
+  }
+
+  async function handleResume() {
+    setLoading('resume')
+    setResult(null)
+    try {
+      const res = await kickDrain()
+      if (res.ok) {
+        show(
+          'success',
+          'Resume triggered — the drain is processing any remaining queued recipients. Refresh in a minute to see updated counts.',
+        )
+      } else {
+        show('error', res.error ?? 'Could not resume the send.')
+      }
+    } catch (e: unknown) {
+      show('error', e instanceof Error ? e.message : 'Could not resume the send.')
+    } finally {
+      setLoading(null)
+    }
   }
 
   return (
@@ -163,6 +184,22 @@ export function SendToAll({ recipientCount, imageUrl }: Props) {
           disabled={loading !== null || !confirmed || !imageConfigured || recipientCount === 0}
         >
           {loading === 'all' ? 'Sending…' : `Send to ${recipientCount.toLocaleString()} patients`}
+        </Button>
+      </div>
+
+      {/* Resume a stalled send — re-kicks the drain for any 'sending' broadcast */}
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+        <p className="text-xs text-muted-foreground">
+          If a send stalled with recipients still queued, resume it.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={handleResume}
+          disabled={loading !== null}
+        >
+          {loading === 'resume' ? 'Resuming…' : 'Resume stalled send'}
         </Button>
       </div>
     </div>

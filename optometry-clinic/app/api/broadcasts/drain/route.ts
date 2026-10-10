@@ -2,9 +2,13 @@
 //
 // Self-chaining broadcast sender. Vercel Hobby allows only one cron/day (already
 // used by the appointment-reminders cron), so we cannot schedule a frequent cron
-// to drain the queue. Instead, each call sends ONE small batch and, if recipients
-// remain, triggers the next call itself. Each invocation is short, so no single
-// request risks the serverless timeout.
+// to drain the queue. Instead, each invocation drains as many batches as fit in a
+// ~45s time budget (under maxDuration 60) and, if recipients remain, triggers ONE
+// successor to continue. Looping per invocation means a full blast needs only a
+// handful of self-triggers, not dozens — far fewer fragile fire-and-forget hops
+// (an earlier one-batch-per-invocation version stalled after ~4 hops on Hobby).
+// A stuck 'sending' broadcast can also be resumed manually: GET this endpoint
+// with the bearer (optionally ?broadcast_id=), e.g. via the admin page's Resume.
 //
 // Auth: Authorization: Bearer ${CRON_SECRET} — same as the reminders cron.
 // Access: service-role admin client (no user session; must bypass RLS).
@@ -27,10 +31,11 @@ import { getSettings } from '@/lib/settings'
 import { sendBroadcastTemplate, type BroadcastSendInput } from '@/lib/broadcasts'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60 // Hobby ceiling; one batch finishes well inside it.
+export const maxDuration = 60 // Hobby ceiling; the batch loop below stays under it.
 
 const BATCH_SIZE = 40
 const DELAY_MS = 150 // gentle pacing between sends, to protect the number's quality rating
+const TIME_BUDGET_MS = 45_000 // drain many batches per invocation, then hand off once
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -91,21 +96,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ done: true, message: 'No broadcast in sending state.' })
   }
 
-  // 2. Next batch of queued recipients for this broadcast, each with the
-  //    patient's current opt-out flag. Defence-in-depth: enqueue already excludes
-  //    opted-out patients, but one may have sent STOP since being enqueued.
-  const { data: batch, error: batchErr } = await admin
-    .from('broadcast_recipients')
-    .select('id, phone, patient_id, patients(marketing_opted_out, full_name)')
-    .eq('broadcast_id', broadcast.id)
-    .eq('status', 'queued')
-    .order('id', { ascending: true })
-    .limit(BATCH_SIZE)
-
-  if (batchErr) {
-    return NextResponse.json({ error: batchErr.message }, { status: 500 })
-  }
-
   const settings = await getSettings()
 
   // Raw, UNresolved params as stored on the broadcast — may contain tokens like
@@ -123,47 +113,81 @@ export async function GET(req: NextRequest) {
     title: broadcast.title,
   }
 
+  // 2. Drain batches in a loop until the queue empties OR the time budget is hit.
+  //    Each batch moves its rows OUT of 'queued' before the next select, so the
+  //    re-query never re-picks a handled row (same linear invariant as before —
+  //    still do NOT run two drains for one broadcast concurrently).
+  const startedAt = Date.now()
   let processed = 0
-  for (const r of (batch ?? []) as any[]) {
-    const patient = Array.isArray(r.patients) ? r.patients[0] : r.patients
-    if (patient?.marketing_opted_out === true) {
-      await admin
-        .from('broadcast_recipients')
-        .update({
-          status: 'skipped',
-          error: 'Patient opted out of marketing',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', r.id)
+  let outOfTime = false
+
+  while (!outOfTime) {
+    if (Date.now() - startedAt >= TIME_BUDGET_MS) {
+      outOfTime = true
+      break
+    }
+
+    const { data: batch, error: batchErr } = await admin
+      .from('broadcast_recipients')
+      .select('id, phone, patient_id, patients(marketing_opted_out, full_name)')
+      .eq('broadcast_id', broadcast.id)
+      .eq('status', 'queued')
+      .order('id', { ascending: true })
+      .limit(BATCH_SIZE)
+
+    if (batchErr) {
+      return NextResponse.json({ error: batchErr.message }, { status: 500 })
+    }
+    if (!batch || batch.length === 0) break // queue drained
+
+    for (const r of batch as any[]) {
+      // Stop mid-batch if we run out of budget; the rest stays 'queued' for the
+      // successor. Checked first so a skip-only batch can't blow past the budget.
+      if (Date.now() - startedAt >= TIME_BUDGET_MS) {
+        outOfTime = true
+        break
+      }
+
+      const patient = Array.isArray(r.patients) ? r.patients[0] : r.patients
+      if (patient?.marketing_opted_out === true) {
+        await admin
+          .from('broadcast_recipients')
+          .update({
+            status: 'skipped',
+            error: 'Patient opted out of marketing',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', r.id)
+        processed++
+        continue
+      }
+
+      // Personalise {{first_name}} (and any future tokens) for THIS recipient.
+      const firstName = firstNameFrom(patient?.full_name)
+      const input: BroadcastSendInput = {
+        ...baseInput,
+        bodyParams: resolvePersonalisedParams(rawParams, firstName),
+      }
+
+      const result = await sendBroadcastTemplate(r.phone, input, settings)
+
+      const update: Record<string, any> = {
+        status: result.status,
+        updated_at: new Date().toISOString(),
+      }
+      if (result.status === 'sent') {
+        update.wa_message_id = result.waMessageId
+        update.sent_at = new Date().toISOString()
+        update.error = null
+      } else {
+        update.error = result.error ?? null
+      }
+
+      await admin.from('broadcast_recipients').update(update).eq('id', r.id)
       processed++
-      continue
+
+      if (DELAY_MS > 0) await sleep(DELAY_MS)
     }
-
-    // Personalise {{first_name}} (and any future tokens) for THIS recipient.
-    const firstName = firstNameFrom(patient?.full_name)
-    const input: BroadcastSendInput = {
-      ...baseInput,
-      bodyParams: resolvePersonalisedParams(rawParams, firstName),
-    }
-
-    const result = await sendBroadcastTemplate(r.phone, input, settings)
-
-    const update: Record<string, any> = {
-      status: result.status,
-      updated_at: new Date().toISOString(),
-    }
-    if (result.status === 'sent') {
-      update.wa_message_id = result.waMessageId
-      update.sent_at = new Date().toISOString()
-      update.error = null
-    } else {
-      update.error = result.error ?? null
-    }
-
-    await admin.from('broadcast_recipients').update(update).eq('id', r.id)
-    processed++
-
-    if (DELAY_MS > 0) await sleep(DELAY_MS)
   }
 
   // 3. Roll up counts from the recipient rows. Head-count queries return only a

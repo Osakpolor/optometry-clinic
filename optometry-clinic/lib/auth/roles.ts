@@ -24,6 +24,13 @@ export function canDeleteVisits(role: string | null): boolean {
   return role === 'doctor' || role === 'admin'
 }
 
+// Front-desk scheduling. Booking, rescheduling and cancelling appointments
+// is core receptionist work, so all three staff roles qualify. This gates
+// the appointment server actions — the real guard, not just hidden buttons.
+export function canManageAppointments(role: string | null): boolean {
+  return role === 'receptionist' || role === 'doctor' || role === 'admin'
+}
+
 export function canManageFileNumber(role: string | null): boolean {
   return role === 'admin'
 }

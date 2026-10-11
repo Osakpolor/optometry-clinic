@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { EditPatientDialog } from '@/components/patients/EditPatientDialog'
 import { DeletePatientButton } from '@/components/patients/DeletePatientButton'
 import PatientDocuments from '@/components/PatientDocuments'
+import { AppointmentSlideOver } from '@/components/appointments/AppointmentSlideOver'
+import { canManageAppointments } from '@/lib/auth/roles'
 
 export default async function PatientDetailPage({
   params,
@@ -199,9 +201,15 @@ export default async function PatientDetailPage({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base font-medium">Appointments</CardTitle>
-            <Link href={`/dashboard/patients/${id}/appointments/new`}>
-              <Button variant="outline" size="sm">+ Book slot</Button>
-            </Link>
+            {/* Opens a patient-scoped slide-over to book / reschedule / cancel.
+                Replaces the old link to a full page that used a time picker —
+                this clinic is walk-in and day-level only. */}
+            <AppointmentSlideOver
+              patientId={id}
+              patientName={patient.full_name ?? 'this patient'}
+              appointments={appointments ?? []}
+              canManage={canManageAppointments(userRole)}
+            />
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { SendToAll } from '@/components/broadcasts/SendToAll'
+import { BroadcastFunnel, type BroadcastRow } from '@/components/broadcasts/BroadcastFunnel'
 import { wsdHeaderImageUrl } from '@/lib/broadcast-campaign'
 
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,15 @@ export default async function BroadcastsPage() {
   const recipientCount = count ?? 0
   const imageUrl = wsdHeaderImageUrl()
 
+  // Recent broadcasts with their delivery counts (admin-readable via RLS).
+  const { data: broadcasts } = await supabase
+    .from('broadcasts')
+    .select(
+      'id, title, status, total_count, sent_count, delivered_count, read_count, failed_count, capped_count, created_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(10)
+
   return (
     <main className="w-full py-2">
       <Link href="/dashboard" className="text-sm text-muted-foreground hover:underline">
@@ -74,6 +84,30 @@ export default async function BroadcastsPage() {
         <Separator />
         <CardContent className="px-5 pt-5 pb-6">
           <SendToAll recipientCount={recipientCount} imageUrl={imageUrl} />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6 border border-border shadow-none">
+        <CardHeader className="px-5 pt-5 pb-3">
+          <CardTitle className="text-sm font-semibold text-gray-700">
+            Recent broadcasts — delivery
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Each recipient appears in one stage (its latest status); Delivered and Read update as
+            Meta confirms receipts.
+          </p>
+        </CardHeader>
+        <Separator />
+        <CardContent className="px-5 pt-5 pb-6">
+          {broadcasts && broadcasts.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {(broadcasts as BroadcastRow[]).map((b) => (
+                <BroadcastFunnel key={b.id} b={b} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No broadcasts yet.</p>
+          )}
         </CardContent>
       </Card>
     </main>

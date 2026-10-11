@@ -20,6 +20,95 @@ function isOptOutRequest(text: string, isButtonTap: boolean): boolean {
   return /^(stop|unsubscribe)\b/.test(normalized)
 }
 
+// Map a Meta delivery-status receipt to our broadcast_recipients status.
+function mapDeliveryStatus(s: any): { status: string; error?: string } | null {
+  switch (s?.status) {
+    case 'sent':      return { status: 'sent' }
+    case 'delivered': return { status: 'delivered' }
+    case 'read':      return { status: 'read' }
+    case 'failed': {
+      const err = Array.isArray(s.errors) ? s.errors[0] : undefined
+      const reason = err?.error_data?.details || err?.message || err?.title || 'Delivery failed'
+      // 131049 = per-user marketing cap: an expected drop, not a hard failure.
+      if (err?.code === 131049) return { status: 'capped', error: reason }
+      return { status: 'failed', error: reason }
+    }
+    default: return null
+  }
+}
+
+// Progression rank — only ever UPGRADE, never downgrade. 'read' must not be
+// clobbered by a late 'delivered', and an existing delivered/failed/capped is
+// not rewritten by an equal-rank receipt.
+const STATUS_RANK: Record<string, number> = {
+  queued: 0, skipped: 0, sent: 1, failed: 2, capped: 2, delivered: 2, read: 3,
+}
+
+// Apply Meta delivery-status receipts to broadcast_recipients, then roll the
+// fresh counts up to each affected broadcast. Receipts for non-broadcast sends
+// (reminders, Iris) simply match no row and are ignored.
+async function applyBroadcastStatuses(statuses: any[]): Promise<void> {
+  const admin = createAdminClient()
+  const affected = new Set<string>()
+
+  for (const s of statuses) {
+    const waId = s?.id
+    if (!waId) continue
+    const mapped = mapDeliveryStatus(s)
+    if (!mapped) continue
+
+    const { data: rows } = await admin
+      .from('broadcast_recipients')
+      .select('id, status, broadcast_id')
+      .eq('wa_message_id', waId)
+      .limit(1)
+    const rec = rows?.[0]
+    if (!rec) continue // not one of our broadcast messages
+
+    const curRank = STATUS_RANK[rec.status] ?? 0
+    const newRank = STATUS_RANK[mapped.status] ?? 0
+    if (newRank <= curRank) continue // never downgrade or rewrite same rank
+
+    const update: Record<string, any> = {
+      status: mapped.status,
+      updated_at: new Date().toISOString(),
+    }
+    if (mapped.error !== undefined) update.error = mapped.error
+    await admin.from('broadcast_recipients').update(update).eq('id', rec.id)
+    affected.add(rec.broadcast_id)
+  }
+
+  // Recompute exact-status counts for each affected broadcast (same head-count
+  // shape the drain uses; we do NOT touch broadcast.status or total_count here).
+  for (const broadcastId of affected) {
+    const countStatus = async (status: string) => {
+      const { count } = await admin
+        .from('broadcast_recipients')
+        .select('id', { count: 'exact', head: true })
+        .eq('broadcast_id', broadcastId)
+        .eq('status', status)
+      return count ?? 0
+    }
+    const [sent, delivered, read, failed, capped] = await Promise.all([
+      countStatus('sent'),
+      countStatus('delivered'),
+      countStatus('read'),
+      countStatus('failed'),
+      countStatus('capped'),
+    ])
+    await admin
+      .from('broadcasts')
+      .update({
+        sent_count: sent,
+        delivered_count: delivered,
+        read_count: read,
+        failed_count: failed,
+        capped_count: capped,
+      })
+      .eq('id', broadcastId)
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const mode      = searchParams.get('hub.mode')
@@ -40,6 +129,21 @@ export async function POST(req: NextRequest) {
     const changes  = entry?.changes?.[0]
     const value    = changes?.value
     const messages = value?.messages
+    const statuses = value?.statuses
+
+    // ── Delivery-status receipts (sent/delivered/read/failed) ──────────────
+    // Meta posts these in value.statuses[], SEPARATELY from value.messages. A
+    // status payload carries no inbound message to reply to, so apply it to the
+    // matching broadcast_recipients row(s) and return — before the messages
+    // guard below, which would otherwise drop status-only payloads.
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      try {
+        await applyBroadcastStatuses(statuses)
+      } catch (e) {
+        console.error('broadcast delivery-status update failed:', e)
+      }
+      return NextResponse.json({ status: 'ok' })
+    }
 
     if (!messages || messages.length === 0) {
       return NextResponse.json({ status: 'ok' })

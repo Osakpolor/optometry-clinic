@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { CalendarPlus, X } from 'lucide-react'
+import { Calendar, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -125,8 +125,8 @@ export function AppointmentSlideOver({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        <CalendarPlus className="w-3.5 h-3.5 mr-1.5" />
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        <Calendar className="w-3.5 h-3.5 mr-1.5" />
         Book / manage
       </Button>
 
@@ -281,9 +281,9 @@ export function AppointmentSlideOver({
                                   </span>
                                   <Button
                                     size="sm"
+                                    variant="destructive"
                                     onClick={() => handleCancel(a.id)}
                                     disabled={isPending}
-                                    className="bg-red-600 hover:bg-red-700 text-white"
                                   >
                                     {isPending ? 'Cancelling…' : 'Yes, cancel'}
                                   </Button>
@@ -300,16 +300,15 @@ export function AppointmentSlideOver({
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant="secondary"
                                     onClick={() => startReschedule(a)}
                                   >
                                     Reschedule
                                   </Button>
                                   <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant="destructive"
                                     onClick={() => { setEditingId(null); setConfirmingCancelId(a.id) }}
-                                    className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
                                   >
                                     Cancel
                                   </Button>

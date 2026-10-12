@@ -60,10 +60,9 @@ export function DeletePatientButton({ patientId, patientName }: Props) {
   return (
     <>
       <Button
-        variant="outline"
+        variant="destructive"
         size="sm"
         onClick={handleOpen}
-        className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
       >
         <Trash2 className="w-3.5 h-3.5 mr-1.5" />
         Delete

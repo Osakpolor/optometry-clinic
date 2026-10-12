@@ -102,7 +102,7 @@ export function EditPatientDialog({ patient, userRole }: Props) {
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
         <Pencil className="w-3.5 h-3.5 mr-1.5" />
         Edit
       </Button>

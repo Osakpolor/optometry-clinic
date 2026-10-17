@@ -1,19 +1,16 @@
 import fs from 'fs'
 import path from 'path'
 
+// Only STABLE, per-clinic identity fields live here. Everything that changes
+// per message (today's date, time of day, greeting flags, the patient record)
+// is supplied separately as an uncached system block by the caller, so the
+// compiled prompt below stays byte-identical across calls and can be cached.
 type ClinicConfig = {
   clinic_name: string
   clinic_address: string
   clinic_phone: string
   clinic_services: string
   clinic_hours: string
-  patient_context: string
-  is_first_ever_contact: string
-  is_first_today: string
-  time_of_day: string
-  patient_name: string
-  current_date: string       // e.g. "Monday, 6 October 2025" — injected so Iris knows today's real date
-  is_known_patient: string   // "true" | "false" — tells Iris not to ask registered patients for their name
 }
 
 export async function loadClinicPrompt(
@@ -38,13 +35,6 @@ export async function loadClinicPrompt(
     .replace(/{{clinic_phone}}/g, config.clinic_phone)
     .replace(/{{clinic_services}}/g, config.clinic_services)
     .replace(/{{clinic_hours}}/g, config.clinic_hours)
-    .replace(/{{patient_context}}/g, config.patient_context)
-    .replace(/{{is_first_ever_contact}}/g, config.is_first_ever_contact)
-    .replace(/{{is_first_today}}/g, config.is_first_today)
-    .replace(/{{time_of_day}}/g, config.time_of_day)
-    .replace(/{{patient_name}}/g, config.patient_name)
-    .replace(/{{current_date}}/g, config.current_date)
-    .replace(/{{is_known_patient}}/g, config.is_known_patient)
 
   return compiled
 }

@@ -194,21 +194,40 @@ UNKNOWN CONTACT:
   // ── Is this a known patient (drives rebook vs lead routing) ──
   const isKnownPatient = patient !== null
 
-  // ── Load system prompt from markdown file ────────────────
+  // ── Load the STABLE clinic instructions (the cached prefix) ──────────────
+  // This is the full ~500-line prompt body. It never changes between calls, so
+  // it goes in a `cache_control: 'ephemeral'` system block below and is billed
+  // at ~10% of the input rate on every call after the first within the cache
+  // window. Only clinic-identity fields are injected — all compile-time
+  // constants — so the compiled text stays byte-identical across calls.
   const systemPrompt = await loadClinicPrompt('olu-eye-clinic', {
     clinic_name: 'Olu Eye Clinic',
     clinic_address: '158 Airport Road, Ogogugbo, Benin City 300251, Edo State',
     clinic_phone: '+234 9166015438',
     clinic_services: 'Eye exams, glasses fitting, contact lens fitting, follow-up visits',
     clinic_hours: 'Monday–Saturday, 8am–4pm',
-    patient_context: patientContext,
-    is_first_ever_contact: isFirstEverContact ? 'true' : 'false',
-    is_first_today: isFirstToday ? 'true' : 'false',
-    time_of_day: timeOfDay,
-    patient_name: patientName,
-    current_date: currentDate,
-    is_known_patient: isKnownPatient ? 'true' : 'false',
   })
+
+  // ── Build the VOLATILE live context (uncached) ───────────────────────────
+  // Today's date, time of day, the greeting flags and the patient record all
+  // change per message, so they MUST sit AFTER the cached block. If any of this
+  // were inside the cached prefix, every call would invalidate the cache and we
+  // would pay full input price every time. The prompt body points Iris to this
+  // "LIVE SESSION CONTEXT" section as the source of truth for dates and record.
+  const liveContext = `# LIVE SESSION CONTEXT
+These values change on every message. Treat them as the source of truth for
+today's date, the time of day, who you are speaking to, and their record.
+
+## Session
+- Today's date: ${currentDate}
+- First time this contact has EVER messaged us: ${isFirstEverContact ? 'true' : 'false'}
+- First message from this contact TODAY: ${isFirstToday ? 'true' : 'false'}
+- Time of day: ${timeOfDay}
+- Patient name: ${patientName || '(unknown)'}
+- Registered patient (in our database): ${isKnownPatient ? 'true' : 'false'}
+
+## Patient record
+${patientContext}`
 
   // ── Build conversation history for Claude ────────────────
   // Only user/assistant turns go in `messages`. logWhatsAppMessage also records
@@ -241,12 +260,41 @@ UNKNOWN CONTACT:
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: systemPrompt,
+      // Two system blocks. The first is the big, stable instruction set and
+      // carries the cache breakpoint (cache_control), so the prefix up to and
+      // including it is cached. The second holds the per-message live context
+      // and is deliberately left uncached — it sits AFTER the breakpoint so it
+      // never invalidates the cached prefix. Prompt caching is GA, so no
+      // anthropic-beta header is needed on top of anthropic-version 2023-06-01.
+      system: [
+        {
+          type: 'text',
+          text: systemPrompt,
+          cache_control: { type: 'ephemeral' },
+        },
+        {
+          type: 'text',
+          text: liveContext,
+        },
+      ],
       messages,
     }),
   })
 
   const data = await response.json()
+
+  // Cache-hit visibility (shows up in Vercel function logs). On the 2nd+ call
+  // within the ~5-min cache window, cache_read_input_tokens should be large and
+  // input_tokens small; on the first call cache_creation_input_tokens is set.
+  if (data?.usage) {
+    const u = data.usage
+    console.log('🧮 Iris token usage ' + JSON.stringify({
+      input_tokens: u.input_tokens,
+      cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+      cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+      output_tokens: u.output_tokens,
+    }))
+  }
 
   if (!response.ok) {
     console.error('Claude API error:', data)

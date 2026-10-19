@@ -74,6 +74,25 @@ export async function rescheduleAppointment(
   return { success: true }
 }
 
+// Confirm = mark a booked appointment as confirmed (e.g. patient confirmed by
+// phone). Not destructive, so no audit row — but still server-guarded, never a
+// client-side status write.
+export async function confirmAppointment(appointmentId: string): Promise<Result> {
+  const role = await getUserRole()
+  if (!canManageAppointments(role)) {
+    return { error: 'You do not have permission to confirm appointments.' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('appointments')
+    .update({ status: 'confirmed' })
+    .eq('id', appointmentId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 // Cancel = soft status change (the row is kept). Cancellation is a
 // destructive clinical action, so it is audited: who / what / when.
 export async function cancelAppointment(appointmentId: string): Promise<Result> {

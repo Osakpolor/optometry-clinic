@@ -34,9 +34,10 @@ export default function DashboardNav({ isAdmin, isReceptionist = false }: Props)
   // Build the nav link list based on role
   const links = [
     ...BASE_NAV_LINKS,
-    // Rebooking — receptionist and admin only
+    // Scheduling hub (reschedule requests + appointment book) — receptionist
+    // and admin only. Replaces the old standalone "Rebooking" link.
     ...(canSeeStaffFeatures
-      ? [{ href: '/dashboard/rebooking', label: 'Rebooking' }]
+      ? [{ href: '/dashboard/scheduling', label: 'Scheduling' }]
       : []),
     // Admin-only links
     ...(isAdmin

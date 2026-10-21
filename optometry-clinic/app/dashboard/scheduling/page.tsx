@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getUserRole, canManageRebooking, canManageAppointments } from '@/lib/auth/roles'
+import { clinicDay, clinicToday, ACTIVE_STATUSES } from '@/lib/scheduling-config'
 import SchedulingHub from '@/components/scheduling/SchedulingHub'
 
 export const dynamic = 'force-dynamic'
@@ -21,8 +22,8 @@ export default async function SchedulingPage() {
     redirect('/dashboard')
   }
 
-  // Server time; appointments are stored at noon so the date slice is stable.
-  const todayStr = new Date().toISOString().slice(0, 10)
+  // "Today" is the clinic's LOCAL day (Africa/Lagos), not the server's UTC day.
+  const todayStr = clinicToday()
 
   // ── Lane 1: pending reschedule requests ──────────────────────────────────
   const { data: pendingRaw } = await supabase
@@ -67,13 +68,41 @@ export default async function SchedulingPage() {
     status: a.status,
   }))
 
-  const todayCount = appointments.filter(a => a.date.slice(0, 10) === todayStr).length
-  const upcomingCount = appointments.filter(a => a.date.slice(0, 10) > todayStr).length
+  const todayCount = appointments.filter(a => clinicDay(a.date) === todayStr).length
+  const upcomingCount = appointments.filter(a => clinicDay(a.date) > todayStr).length
+
+  // ── Calendar data: ACTIVE appointments only (booked/confirmed) ───────────
+  // Cancelled/completed/no_show are excluded at the query, so they can never
+  // inflate a day's occupancy heat. Loaded across a window (start of last month
+  // → ~4 months ahead) so the month grid can navigate without a per-month
+  // refetch. Grouping into local days happens in the client via clinicDay().
+  const now = new Date()
+  const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  const windowEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 5, 1))
+
+  const { data: calRaw } = await supabase
+    .from('appointments')
+    .select('id, patient_id, appointment_date, service_type, status, patients(full_name)')
+    .in('status', [...ACTIVE_STATUSES])
+    .gte('appointment_date', windowStart.toISOString())
+    .lt('appointment_date', windowEnd.toISOString())
+    .order('appointment_date', { ascending: true })
+    .limit(2000)
+
+  const calendarAppointments = (calRaw ?? []).map(a => ({
+    id: a.id,
+    patientId: a.patient_id,
+    patientName: (a.patients as { full_name: string | null }[] | null)?.[0]?.full_name ?? 'Unknown patient',
+    date: a.appointment_date,
+    serviceType: a.service_type,
+    status: a.status,
+  }))
 
   return (
     <SchedulingHub
       pendingRequests={pendingRequests}
       appointments={appointments}
+      calendarAppointments={calendarAppointments}
       counts={{
         today: todayCount,
         upcoming: upcomingCount,

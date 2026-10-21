@@ -3,12 +3,14 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { CalendarDays, List, CalendarRange } from 'lucide-react'
+import { CalendarDays, List } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { clinicDay } from '@/lib/scheduling-config'
+import CalendarView from '@/components/scheduling/CalendarView'
 import { approveRebook, declineRebook } from '@/app/actions/rebookActions'
 import {
   rescheduleAppointment,
@@ -41,6 +43,7 @@ type Appointment = {
 type Props = {
   pendingRequests: PendingRequest[]
   appointments: Appointment[]
+  calendarAppointments: Appointment[]
   counts: { today: number; upcoming: number; pending: number }
   todayStr: string
   canManageRebook: boolean
@@ -77,6 +80,7 @@ function timeAgo(iso: string) {
 export default function SchedulingHub({
   pendingRequests,
   appointments,
+  calendarAppointments,
   counts,
   todayStr,
   canManageRebook,
@@ -101,8 +105,8 @@ export default function SchedulingHub({
   const [rescheduleDate, setRescheduleDate] = useState('')
   const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null)
 
-  const todayAppts = appointments.filter(a => a.date.slice(0, 10) === todayStr)
-  const upcomingAppts = appointments.filter(a => a.date.slice(0, 10) > todayStr)
+  const todayAppts = appointments.filter(a => clinicDay(a.date) === todayStr)
+  const upcomingAppts = appointments.filter(a => clinicDay(a.date) > todayStr)
 
   // Surface a server action's { error | warning | success } result uniformly.
   function report(res: { error?: string; warning?: string }, okMsg: string) {
@@ -356,15 +360,13 @@ export default function SchedulingHub({
         )}
       </div>
 
-      {/* Calendar placeholder (Phase 3) */}
+      {/* Calendar view (Phase 3) — day-level occupancy heat */}
       {view === 'calendar' ? (
-        <div className="rounded-lg border border-dashed border-gray-200 bg-white py-16 text-center shadow-sm">
-          <CalendarRange className="mx-auto h-8 w-8 text-gray-300" />
-          <p className="mt-3 text-sm font-medium text-gray-600">Calendar view is coming in Phase 3.</p>
-          <p className="mt-1 text-xs text-gray-400">
-            A month grid with day-level occupancy colours. Use the List view for now.
-          </p>
-        </div>
+        <CalendarView
+          appointments={calendarAppointments}
+          todayStr={todayStr}
+          canManage={canManageAppts}
+        />
       ) : tab === 'pending' ? (
         /* ── Lane 1: reschedule requests ── */
         pendingRequests.length === 0 ? (

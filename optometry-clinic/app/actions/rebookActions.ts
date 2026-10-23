@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getUserRole, canManageRebooking } from '@/lib/auth/roles'
+import { getUserRole, canManageAppointments } from '@/lib/auth/roles'
 import { sendWhatsAppMessage, logWhatsAppMessage } from '@/lib/whatsapp'
 
 // A `warning` means the DB change succeeded but a non-critical side effect
@@ -36,7 +36,7 @@ export async function approveRebook(
   internalNote?: string
 ): Promise<Result> {
   const role = await getUserRole()
-  if (!canManageRebooking(role)) {
+  if (!canManageAppointments(role)) {
     return { error: 'You do not have permission to approve reschedule requests.' }
   }
   if (!ISO_DATE.test(newDate)) {
@@ -137,7 +137,7 @@ export async function declineRebook(
   internalNote?: string
 ): Promise<Result> {
   const role = await getUserRole()
-  if (!canManageRebooking(role)) {
+  if (!canManageAppointments(role)) {
     return { error: 'You do not have permission to decline reschedule requests.' }
   }
   if (!message?.trim()) {

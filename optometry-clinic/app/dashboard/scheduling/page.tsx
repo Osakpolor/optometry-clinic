@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getUserRole, canManageRebooking, canManageAppointments } from '@/lib/auth/roles'
+import { getUserRole, canManageAppointments } from '@/lib/auth/roles'
 import { clinicDay, clinicToday, ACTIVE_STATUSES } from '@/lib/scheduling-config'
 import SchedulingHub from '@/components/scheduling/SchedulingHub'
 
@@ -17,8 +17,9 @@ export default async function SchedulingPage() {
   if (!user) redirect('/login')
 
   const role = await getUserRole()
-  // Same access as the old Rebooking page — front-desk staff only.
-  if (role !== 'receptionist' && role !== 'admin') {
+  // ONE shared rule for all of Scheduling (admin / doctor / receptionist).
+  // A disallowed role redirects cleanly to the dashboard — never throws.
+  if (!canManageAppointments(role)) {
     redirect('/dashboard')
   }
 
@@ -109,8 +110,7 @@ export default async function SchedulingPage() {
         pending: pendingRequests.length,
       }}
       todayStr={todayStr}
-      canManageRebook={canManageRebooking(role)}
-      canManageAppts={canManageAppointments(role)}
+      canManage={canManageAppointments(role)}
     />
   )
 }

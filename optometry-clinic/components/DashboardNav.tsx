@@ -12,7 +12,9 @@ import { getUnreadThreadCount } from '@/app/actions/conversationBadges'
 
 type Props = {
   isAdmin: boolean
-  isReceptionist?: boolean
+  // True for anyone who can manage appointments (admin / doctor / receptionist)
+  // — the single rule that also gates the Scheduling page and its actions.
+  canSchedule?: boolean
 }
 
 const BASE_NAV_LINKS = [
@@ -22,21 +24,20 @@ const BASE_NAV_LINKS = [
   { href: '/dashboard/conversations', label: 'Conversations' },
 ]
 
-export default function DashboardNav({ isAdmin, isReceptionist = false }: Props) {
+export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
   const [open, setOpen] = useState(false)
   const [unread, setUnread] = useState(0)
   const pathname = usePathname()
   const pathRef = useRef(pathname)
   useEffect(() => { pathRef.current = pathname }, [pathname])
 
-  const canSeeStaffFeatures = isAdmin || isReceptionist
-
   // Build the nav link list based on role
   const links = [
     ...BASE_NAV_LINKS,
-    // Scheduling hub (reschedule requests + appointment book) — receptionist
-    // and admin only. Replaces the old standalone "Rebooking" link.
-    ...(canSeeStaffFeatures
+    // Scheduling hub (reschedule requests + appointment book) — shown to anyone
+    // who can manage appointments: admin, doctor AND receptionist. Doctors get
+    // Scheduling but NOT the admin-only links below.
+    ...(canSchedule
       ? [{ href: '/dashboard/scheduling', label: 'Scheduling' }]
       : []),
     // Admin-only links

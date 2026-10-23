@@ -46,8 +46,7 @@ type Props = {
   calendarAppointments: Appointment[]
   counts: { today: number; upcoming: number; pending: number }
   todayStr: string
-  canManageRebook: boolean
-  canManageAppts: boolean
+  canManage: boolean
 }
 
 type Tab = 'pending' | 'today' | 'upcoming'
@@ -83,8 +82,7 @@ export default function SchedulingHub({
   calendarAppointments,
   counts,
   todayStr,
-  canManageRebook,
-  canManageAppts,
+  canManage,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -236,7 +234,7 @@ export default function SchedulingHub({
           <StatusPill status={a.status} />
         </div>
 
-        {canManageAppts && (
+        {canManage && (
           <div className="mt-3">
             {reschedulingId === a.id ? (
               <div className="flex items-end gap-2">
@@ -365,7 +363,7 @@ export default function SchedulingHub({
         <CalendarView
           appointments={calendarAppointments}
           todayStr={todayStr}
-          canManage={canManageAppts}
+          canManage={canManage}
         />
       ) : tab === 'pending' ? (
         /* ── Lane 1: reschedule requests ── */
@@ -414,7 +412,7 @@ export default function SchedulingHub({
                     )}
                   </div>
 
-                  {canManageRebook && approvingId !== req.id && decliningId !== req.id && (
+                  {canManage && approvingId !== req.id && decliningId !== req.id && (
                     <div className="mt-4 flex gap-2">
                       <Button size="sm" onClick={() => openApprove(req)}>Approve &amp; reschedule</Button>
                       <Button size="sm" variant="destructive" onClick={() => openDecline(req)}>Decline</Button>

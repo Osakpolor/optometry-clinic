@@ -10,8 +10,8 @@
 export const CLINIC_TIMEZONE = 'Africa/Lagos'
 
 // Days the clinic is CLOSED, as weekday numbers (0 = Sunday … 6 = Saturday).
-// Default: closed Sundays. TODO(owner): confirm the real closed day(s) and
-// edit this array — e.g. [0] Sun only, or [0, 6] for Sun + Sat.
+// Confirmed by the clinic: closed Sundays only. To change later, edit this
+// array — e.g. [0, 6] for Sun + Sat.
 export const CLOSED_WEEKDAYS: number[] = [0]
 
 // Day-level occupancy heat thresholds — counts of ACTIVE appointments on a day.
@@ -52,16 +52,33 @@ const _dayFmt = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 })
 
-// Returns the clinic-local calendar day for a DB timestamp, as "YYYY-MM-DD".
-export function clinicDay(value: string): string {
-  // Guard against a bare `timestamp` (no offset): treat it as UTC so the server
-  // (UTC) and the browser (any zone) always agree before converting to Lagos.
-  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value)
-  const parts = _dayFmt.formatToParts(new Date(hasTz ? value : `${value}Z`))
-  const y = parts.find(p => p.type === 'year')!.value
-  const m = parts.find(p => p.type === 'month')!.value
-  const d = parts.find(p => p.type === 'day')!.value
-  return `${y}-${m}-${d}`
+// Returns the clinic-local calendar day for a DB timestamp, as "YYYY-MM-DD",
+// or "" when the value is missing or unparseable.
+//
+// This MUST NOT throw: a single malformed row would otherwise crash the whole
+// Scheduling render (a real incident — two legacy appointments had typo'd
+// 5-digit years like "82026-02-10", which Postgres stores happily but JS
+// `new Date()` rejects, and Intl.formatToParts throws "Invalid time value" on).
+// An unparseable date returns "" so it simply never matches a calendar day.
+export function clinicDay(value: string | null | undefined): string {
+  if (!value) return ''
+
+  // Normalise: a date-only value gets noon; a naive timestamp (no offset) is
+  // treated as UTC so server (UTC) and browser (any zone) agree before the
+  // conversion to Lagos.
+  let s = value
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s = `${s}T12:00:00Z`
+  else if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = `${s}Z`
+
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+
+  const parts = _dayFmt.formatToParts(d)
+  const y = parts.find(p => p.type === 'year')?.value ?? ''
+  const m = parts.find(p => p.type === 'month')?.value ?? ''
+  const dd = parts.find(p => p.type === 'day')?.value ?? ''
+  if (!y || !m || !dd) return ''
+  return `${y}-${m}-${dd}`
 }
 
 // Today's date in the clinic's timezone, as "YYYY-MM-DD".

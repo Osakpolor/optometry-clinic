@@ -24,21 +24,15 @@ export function canDeleteVisits(role: string | null): boolean {
   return role === 'doctor' || role === 'admin'
 }
 
-// Front-desk scheduling. Booking, rescheduling and cancelling appointments
-// is core receptionist work, so all three staff roles qualify. This gates
-// the appointment server actions — the real guard, not just hidden buttons.
+// The SINGLE rule for all of Scheduling: the hub nav link, the
+// /dashboard/scheduling page guard, and every scheduling server action
+// (book / reschedule / cancel / confirm / approve-rebook / decline-rebook /
+// patient search) all gate on exactly this set. All three staff roles do
+// front-desk scheduling, so all three qualify — there is deliberately no
+// separate "front-desk only" concept. This is the real guard, not just
+// hidden buttons.
 export function canManageAppointments(role: string | null): boolean {
   return role === 'receptionist' || role === 'doctor' || role === 'admin'
-}
-
-// Patient-initiated WhatsApp reschedule requests are front-desk work: the
-// receptionist (or admin) approves or declines them. This mirrors the access
-// on the old Rebooking page and the layout flash bar, and gates the
-// approve/decline server actions — the real guard, not just hidden buttons.
-// (Doctors are deliberately excluded: they manage clinical visits, not the
-// front-desk rebooking queue.)
-export function canManageRebooking(role: string | null): boolean {
-  return role === 'receptionist' || role === 'admin'
 }
 
 export function canManageFileNumber(role: string | null): boolean {

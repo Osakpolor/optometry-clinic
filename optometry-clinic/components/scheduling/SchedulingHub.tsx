@@ -15,7 +15,6 @@ import { approveRebook, declineRebook } from '@/app/actions/rebookActions'
 import {
   rescheduleAppointment,
   cancelAppointment,
-  confirmAppointment,
 } from '@/app/actions/appointmentActions'
 
 type PendingRequest = {
@@ -76,6 +75,137 @@ function timeAgo(iso: string) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+// Uniformly surface a server action's { error | warning | success }.
+function reportResult(res: { error?: string; warning?: string }, okMsg: string): boolean {
+  if (res.error) { toast.error(res.error); return false }
+  if (res.warning) { toast.warning(res.warning); return true }
+  toast.success(okMsg); return true
+}
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className={cn(
+      'shrink-0 rounded-full border px-2 py-0.5 text-xs capitalize',
+      STATUS_PILL[status] ?? 'bg-gray-50 text-gray-600 border-gray-200'
+    )}>
+      {status.replace('_', ' ')}
+    </span>
+  )
+}
+
+// One appointment row. Each row is its OWN component instance with its OWN
+// useTransition + open/confirm state, so acting on one row never flips the
+// pending/disabled state of any other row (the previous shared-state bug).
+// Quick-actions are Reschedule + Cancel only — no Confirm here (the `confirmed`
+// status is set from the manage/detail view, and later from a patient WhatsApp
+// reply). Cancel is QUIET at rest (ghost); the red/danger emphasis lives on the
+// confirmation step, which also guards against accidental cancels.
+function AppointmentRow({
+  a, canManage, todayStr,
+}: { a: Appointment; canManage: boolean; todayStr: string }) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [rescheduling, setRescheduling] = useState(false)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+
+  function doReschedule() {
+    if (!rescheduleDate) { toast.error('Please choose a new date.'); return }
+    startTransition(async () => {
+      const res = await rescheduleAppointment(a.id, rescheduleDate)
+      if (reportResult(res, `Appointment moved to ${formatDay(`${rescheduleDate}T12:00:00`)}.`)) {
+        setRescheduling(false)
+        router.refresh()
+      }
+    })
+  }
+
+  function doCancel() {
+    startTransition(async () => {
+      const res = await cancelAppointment(a.id)
+      if (reportResult(res, 'Appointment cancelled.')) {
+        setConfirmingCancel(false)
+        router.refresh()
+      }
+    })
+  }
+
+  return (
+    <li className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            href={a.patientId ? `/dashboard/patients/${a.patientId}` : '#'}
+            className="text-sm font-medium text-[#171717] hover:text-brand hover:underline"
+          >
+            {a.patientName}
+          </Link>
+          <p className="text-xs text-gray-500">
+            {formatDay(a.date)} · {a.serviceType ?? 'Appointment'}
+          </p>
+        </div>
+        <StatusPill status={a.status} />
+      </div>
+
+      {canManage && (
+        <div className="mt-3">
+          {rescheduling ? (
+            <div className="flex items-end gap-2">
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">New date</Label>
+                <Input
+                  type="date"
+                  min={todayStr}
+                  value={rescheduleDate}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <Button size="sm" onClick={doReschedule} disabled={isPending}>
+                {isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setRescheduling(false)} disabled={isPending}>
+                Cancel
+              </Button>
+            </div>
+          ) : confirmingCancel ? (
+            // Red emphasis lives HERE, at the point of confirmation — not on the
+            // resting trigger above.
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Cancel this appointment?</span>
+              <Button size="sm" variant="destructive" onClick={doCancel} disabled={isPending}>
+                {isPending ? 'Cancelling…' : 'Yes, cancel'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingCancel(false)} disabled={isPending}>
+                Keep
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => { setConfirmingCancel(false); setRescheduleDate(a.date.slice(0, 10)); setRescheduling(true) }}
+              >
+                Reschedule
+              </Button>
+              {/* Quiet at rest — low-weight ghost, not loud red. */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground"
+                onClick={() => { setRescheduling(false); setConfirmingCancel(true) }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
 export default function SchedulingHub({
   pendingRequests,
   appointments,
@@ -98,20 +228,8 @@ export default function SchedulingHub({
   const [declineMsg, setDeclineMsg] = useState('')
   const [declineNote, setDeclineNote] = useState('')
 
-  // Lane 2 — appointment row controls
-  const [reschedulingId, setReschedulingId] = useState<string | null>(null)
-  const [rescheduleDate, setRescheduleDate] = useState('')
-  const [confirmingCancelId, setConfirmingCancelId] = useState<string | null>(null)
-
   const todayAppts = appointments.filter(a => clinicDay(a.date) === todayStr)
   const upcomingAppts = appointments.filter(a => clinicDay(a.date) > todayStr)
-
-  // Surface a server action's { error | warning | success } result uniformly.
-  function report(res: { error?: string; warning?: string }, okMsg: string) {
-    if (res.error) { toast.error(res.error); return false }
-    if (res.warning) { toast.warning(res.warning); return true }
-    toast.success(okMsg); return true
-  }
 
   // ── Lane 1 handlers ──────────────────────────────────────────────────────
   function openApprove(req: PendingRequest) {
@@ -125,7 +243,7 @@ export default function SchedulingHub({
     if (!approveDate) { toast.error('Please choose a date.'); return }
     startTransition(async () => {
       const res = await approveRebook(id, approveDate, approveNote)
-      if (report(res, 'Reschedule approved and patient notified.')) {
+      if (reportResult(res, 'Reschedule approved and patient notified.')) {
         setApprovingId(null)
         router.refresh()
       }
@@ -146,60 +264,14 @@ export default function SchedulingHub({
     if (!declineMsg.trim()) { toast.error('A message to the patient is required.'); return }
     startTransition(async () => {
       const res = await declineRebook(id, declineMsg, declineNote)
-      if (report(res, 'Request declined and patient notified.')) {
+      if (reportResult(res, 'Request declined and patient notified.')) {
         setDecliningId(null)
         router.refresh()
       }
     })
   }
 
-  // ── Lane 2 handlers ──────────────────────────────────────────────────────
-  function startReschedule(a: Appointment) {
-    setConfirmingCancelId(null)
-    setReschedulingId(a.id)
-    setRescheduleDate(a.date.slice(0, 10))
-  }
-
-  function handleReschedule(id: string) {
-    if (!rescheduleDate) { toast.error('Please choose a new date.'); return }
-    startTransition(async () => {
-      const res = await rescheduleAppointment(id, rescheduleDate)
-      if (report(res, `Appointment moved to ${formatDay(`${rescheduleDate}T12:00:00`)}.`)) {
-        setReschedulingId(null)
-        router.refresh()
-      }
-    })
-  }
-
-  function handleCancel(id: string) {
-    startTransition(async () => {
-      const res = await cancelAppointment(id)
-      if (report(res, 'Appointment cancelled.')) {
-        setConfirmingCancelId(null)
-        router.refresh()
-      }
-    })
-  }
-
-  function handleConfirm(id: string) {
-    startTransition(async () => {
-      const res = await confirmAppointment(id)
-      if (report(res, 'Appointment confirmed.')) router.refresh()
-    })
-  }
-
   // ── Render helpers ───────────────────────────────────────────────────────
-  function StatusPill({ status }: { status: string }) {
-    return (
-      <span className={cn(
-        'shrink-0 rounded-full border px-2 py-0.5 text-xs capitalize',
-        STATUS_PILL[status] ?? 'bg-gray-50 text-gray-600 border-gray-200'
-      )}>
-        {status.replace('_', ' ')}
-      </span>
-    )
-  }
-
   function Tile({ label, value, tabKey }: { label: string; value: number; tabKey: Tab }) {
     const active = tab === tabKey
     return (
@@ -216,72 +288,6 @@ export default function SchedulingHub({
     )
   }
 
-  function AppointmentRow({ a }: { a: Appointment }) {
-    return (
-      <li className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <Link
-              href={a.patientId ? `/dashboard/patients/${a.patientId}` : '#'}
-              className="text-sm font-medium text-[#171717] hover:text-brand hover:underline"
-            >
-              {a.patientName}
-            </Link>
-            <p className="text-xs text-gray-500">
-              {formatDay(a.date)} · {a.serviceType ?? 'Appointment'}
-            </p>
-          </div>
-          <StatusPill status={a.status} />
-        </div>
-
-        {canManage && (
-          <div className="mt-3">
-            {reschedulingId === a.id ? (
-              <div className="flex items-end gap-2">
-                <div className="flex flex-col gap-1">
-                  <Label className="text-xs">New date</Label>
-                  <Input
-                    type="date"
-                    min={todayStr}
-                    value={rescheduleDate}
-                    onChange={e => setRescheduleDate(e.target.value)}
-                    className="h-8 text-sm"
-                  />
-                </div>
-                <Button size="sm" onClick={() => handleReschedule(a.id)} disabled={isPending}>Save</Button>
-                <Button size="sm" variant="ghost" onClick={() => setReschedulingId(null)} disabled={isPending}>Cancel</Button>
-              </div>
-            ) : confirmingCancelId === a.id ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Cancel this appointment?</span>
-                <Button size="sm" variant="destructive" onClick={() => handleCancel(a.id)} disabled={isPending}>
-                  {isPending ? 'Cancelling…' : 'Yes, cancel'}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setConfirmingCancelId(null)} disabled={isPending}>Keep</Button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={() => startReschedule(a)}>Reschedule</Button>
-                {a.status !== 'confirmed' && (
-                  <Button size="sm" variant="outline" onClick={() => handleConfirm(a.id)} disabled={isPending}>
-                    Confirm
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => { setReschedulingId(null); setConfirmingCancelId(a.id) }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </li>
-    )
-  }
-
   function ApptList({ items, emptyLabel }: { items: Appointment[]; emptyLabel: string }) {
     if (!items.length) {
       return (
@@ -290,7 +296,13 @@ export default function SchedulingHub({
         </div>
       )
     }
-    return <ul className="flex flex-col gap-2">{items.map(a => <AppointmentRow key={a.id} a={a} />)}</ul>
+    return (
+      <ul className="flex flex-col gap-2">
+        {items.map(a => (
+          <AppointmentRow key={a.id} a={a} canManage={canManage} todayStr={todayStr} />
+        ))}
+      </ul>
+    )
   }
 
   return (

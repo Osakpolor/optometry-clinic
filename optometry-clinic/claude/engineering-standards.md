@@ -41,11 +41,34 @@ token and the `brand` utilities). Do **not** introduce a new colour.
 
 Icons: use lucide icons inside the button; the base sizes them automatically.
 
+### Destructive actions: quiet at rest, red at the confirmation step
+
+A destructive quick-action (cancel appointment, delete, …) is **quiet at rest**
+and only turns red **at the point of confirmation**:
+
+- **At rest** the trigger is low-weight — use `ghost` (optionally
+  `text-muted-foreground`), never a loud/filled red. In a long list this keeps
+  the UI from reading as a wall of red, and it reduces accidental clicks.
+- **Clicking opens a confirmation step** (an inline confirm row or a dialog),
+  and **the red `destructive` emphasis lives THERE** — on the confirm button
+  (e.g. "Yes, cancel") — alongside a `ghost` "Keep"/dismiss.
+
+So "red" signals *"you are about to do the dangerous thing right now,"* not
+*"a dangerous thing is possible here."* Never put the only red button in a
+resting list row.
+
+```tsx
+// resting row — quiet
+<Button size="sm" variant="ghost" className="text-muted-foreground">Cancel</Button>
+// after click — the confirmation carries the red
+<Button size="sm" variant="destructive">Yes, cancel</Button>
+<Button size="sm" variant="ghost">Keep</Button>
+```
+
 ### Notes
 
-- `destructive` is intentionally **de-emphasised** (soft red), so a dangerous
-  action doesn't shout. A destructive *confirmation* button inside a dialog may
-  still use a stronger filled-red treatment where extra weight is warranted —
-  that is the one sanctioned exception; everything else uses a variant.
+- `destructive` is intentionally **de-emphasised** (soft red), so even the
+  confirmation doesn't shout. Per the rule above it belongs on the confirmation
+  step, not on the resting trigger.
 - This rule is the standard going forward. Buttons elsewhere in the app that
   predate it are migrated opportunistically, not all at once.

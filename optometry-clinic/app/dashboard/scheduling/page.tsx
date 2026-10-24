@@ -6,6 +6,15 @@ import SchedulingHub from '@/components/scheduling/SchedulingHub'
 
 export const dynamic = 'force-dynamic'
 
+// A to-one PostgREST embed (e.g. appointments → patients) comes back as an
+// OBJECT at runtime, even though the generated types widen it to an array.
+// Read either shape — indexing [0] on the object silently yields undefined,
+// which is what made every hub row render "Unknown patient".
+function embed<T>(rel: unknown): T | null {
+  if (!rel) return null
+  return ((Array.isArray(rel) ? rel[0] : rel) as T) ?? null
+}
+
 // The Scheduling hub merges the two front-desk lanes:
 //   Lane 1 — patient-initiated WhatsApp reschedule requests (approve/decline)
 //   Lane 2 — appointments booked directly by staff (reschedule/cancel/confirm)
@@ -48,7 +57,7 @@ export default async function SchedulingPage() {
     service: r.service,
     notes: r.notes,
     createdAt: r.created_at,
-    fileNumber: (r.patients as { file_number: string | null }[] | null)?.[0]?.file_number ?? null,
+    fileNumber: embed<{ file_number: string | null }>(r.patients)?.file_number ?? null,
   }))
 
   // ── Lane 2: live appointments (today + upcoming, excludes cancelled/done) ─
@@ -63,7 +72,7 @@ export default async function SchedulingPage() {
   const appointments = (apptsRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
-    patientName: (a.patients as { full_name: string | null }[] | null)?.[0]?.full_name ?? 'Unknown patient',
+    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
     date: a.appointment_date,
     serviceType: a.service_type,
     status: a.status,
@@ -93,7 +102,7 @@ export default async function SchedulingPage() {
   const calendarAppointments = (calRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
-    patientName: (a.patients as { full_name: string | null }[] | null)?.[0]?.full_name ?? 'Unknown patient',
+    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
     date: a.appointment_date,
     serviceType: a.service_type,
     status: a.status,

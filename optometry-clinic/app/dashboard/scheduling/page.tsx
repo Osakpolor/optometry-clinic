@@ -90,13 +90,38 @@ export default async function SchedulingPage({
     status: a.status,
   }))
 
-  const todayCount = calendarAppointments.filter(a => clinicDay(a.date) === todayStr).length
   const upcomingCount = calendarAppointments.filter(a => clinicDay(a.date) > todayStr).length
 
-  // ── List data: the browsable appointment list (date range + status) ──────
-  // Mirrors the old /dashboard/appointments page: an adjustable From/To range
-  // and a status filter. Defaults to today → ~3 months ahead, ascending (today
-  // first), so past appointments appear only if the user moves "From" back.
+  // ── Today's day-sheet (the minimal default view) ─────────────────────────
+  // Only today's appointments, cancelled excluded. Range is [today, tomorrow).
+  const tomorrowStr = (() => {
+    const d = new Date(`${todayStr}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + 1)
+    return d.toISOString().slice(0, 10)
+  })()
+
+  const { data: todayRaw } = await supabase
+    .from('appointments')
+    .select('id, patient_id, appointment_date, service_type, status, patients(full_name)')
+    .gte('appointment_date', `${todayStr}T00:00:00`)
+    .lt('appointment_date', `${tomorrowStr}T00:00:00`)
+    .neq('status', 'cancelled')
+    .order('appointment_date', { ascending: true })
+    .limit(300)
+
+  const todayAppointments = (todayRaw ?? []).map(a => ({
+    id: a.id,
+    patientId: a.patient_id,
+    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
+    date: a.appointment_date,
+    serviceType: a.service_type,
+    status: a.status,
+  }))
+  const todayCount = todayAppointments.length
+
+  // ── Upcoming list (date range + status) — the ONLY place browsing lives ──
+  // Adjustable From/To + status filter (collapsible in the UI). Defaults to
+  // today → ~3 months ahead, ascending; move "From" back to see past.
   const sp = await searchParams
   const toDefault = (() => {
     const d = new Date(`${todayStr}T00:00:00Z`)
@@ -117,7 +142,7 @@ export default async function SchedulingPage({
   if (listStatus !== 'all') listQuery = listQuery.eq('status', listStatus)
 
   const { data: listRaw } = await listQuery
-  const listAppointments = (listRaw ?? []).map(a => ({
+  const upcomingAppointments = (listRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
     patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
@@ -126,17 +151,16 @@ export default async function SchedulingPage({
     status: a.status,
   }))
 
-  // If the user arrived with a filter in the URL, land them on the browsable
-  // list; otherwise default to the pending queue when there's something in it.
+  // Arriving with a filter in the URL means the user was browsing Upcoming;
+  // otherwise land on the minimal default (today, pending-on-top).
   const hasFilter = Boolean(sp.from || sp.to || (sp.status && sp.status !== 'all'))
-  const initialTab: 'pending' | 'appointments' = hasFilter
-    ? 'appointments'
-    : pendingRequests.length > 0 ? 'pending' : 'appointments'
+  const initialView: 'today' | 'upcoming' = hasFilter ? 'upcoming' : 'today'
 
   return (
     <SchedulingHub
       pendingRequests={pendingRequests}
-      listAppointments={listAppointments}
+      todayAppointments={todayAppointments}
+      upcomingAppointments={upcomingAppointments}
       calendarAppointments={calendarAppointments}
       counts={{
         today: todayCount,
@@ -146,7 +170,7 @@ export default async function SchedulingPage({
       todayStr={todayStr}
       canManage={canManageAppointments(role)}
       filter={{ from: listFrom, to: listTo, status: listStatus }}
-      initialTab={initialTab}
+      initialView={initialView}
     />
   )
 }

@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { CalendarDays, List } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
+import { CalendarDays, List, ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,20 +40,20 @@ type Appointment = {
 }
 
 type Filter = { from: string; to: string; status: string }
+type Section = 'today' | 'upcoming'
+type View = 'list' | 'calendar'
 
 type Props = {
   pendingRequests: PendingRequest[]
-  listAppointments: Appointment[]
+  todayAppointments: Appointment[]
+  upcomingAppointments: Appointment[]
   calendarAppointments: Appointment[]
   counts: { today: number; upcoming: number; pending: number }
   todayStr: string
   canManage: boolean
   filter: Filter
-  initialTab: Tab
+  initialView: Section
 }
-
-type Tab = 'pending' | 'appointments'
-type View = 'list' | 'calendar'
 
 const STATUS_OPTIONS = ['all', 'booked', 'confirmed', 'completed', 'no_show', 'cancelled'] as const
 
@@ -116,7 +117,7 @@ function AppointmentRow({
 }: { a: Appointment; canManage: boolean; todayStr: string }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [mode, setMode] = useState<'idle' | 'reschedule' | 'status' | 'confirm'>('idle')
+  const [mode, setMode] = useState<'idle' | 'reschedule' | 'confirm'>('idle')
   const [rescheduleDate, setRescheduleDate] = useState('')
   const [target, setTarget] = useState<'cancelled' | 'no_show' | null>(null)
 
@@ -203,24 +204,7 @@ function AppointmentRow({
               <Button size="sm" variant="destructive" onClick={() => target && applyStatus(target)} disabled={isPending}>
                 {isPending ? 'Saving…' : target === 'cancelled' ? 'Yes, cancel' : 'Yes, no-show'}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setMode('status'); setTarget(null) }} disabled={isPending}>Back</Button>
-            </div>
-          ) : mode === 'status' ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-400">Set status:</span>
-              {statusActions.map(o => (
-                <Button
-                  key={o.value}
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground"
-                  onClick={() => chooseStatus(o.value)}
-                  disabled={isPending}
-                >
-                  {o.label}
-                </Button>
-              ))}
-              <Button size="sm" variant="ghost" onClick={() => setMode('idle')} disabled={isPending}>Close</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setMode('idle'); setTarget(null) }} disabled={isPending}>Keep</Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -231,15 +215,32 @@ function AppointmentRow({
               >
                 Reschedule
               </Button>
-              {/* Quiet at rest — opens the compact status control. */}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-muted-foreground"
-                onClick={() => setMode('status')}
-              >
-                Set status
-              </Button>
+              {/* Compact dropdown — quiet at rest; destructive items route to the
+                  confirm step (red only there), the rest apply immediately. */}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={isPending}>
+                    Set status <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="start"
+                    sideOffset={4}
+                    className="z-50 min-w-[9rem] rounded-md border border-gray-200 bg-white p-1 shadow-md"
+                  >
+                    {statusActions.map(o => (
+                      <DropdownMenu.Item
+                        key={o.value}
+                        onSelect={() => chooseStatus(o.value)}
+                        className="cursor-pointer rounded px-2 py-1.5 text-sm text-gray-700 outline-none hover:bg-muted focus:bg-muted"
+                      >
+                        {o.label}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             </div>
           )}
         </div>
@@ -250,19 +251,22 @@ function AppointmentRow({
 
 export default function SchedulingHub({
   pendingRequests,
-  listAppointments,
+  todayAppointments,
+  upcomingAppointments,
   calendarAppointments,
   counts,
   todayStr,
   canManage,
   filter,
-  initialTab,
+  initialView,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
   const [view, setView] = useState<View>('list')
-  const [tab, setTab] = useState<Tab>(initialTab)
+  const [section, setSection] = useState<Section>(initialView)
+  // Upcoming's date/status filter — collapsed by default (progressive disclosure).
+  const [filterOpen, setFilterOpen] = useState(false)
 
   // Lane 1 — reschedule-request panels
   const [approvingId, setApprovingId] = useState<string | null>(null)
@@ -313,11 +317,10 @@ export default function SchedulingHub({
   }
 
   // ── Render helpers ───────────────────────────────────────────────────────
-  function Tile({ label, value, targetTab }: { label: string; value: number; targetTab: Tab }) {
-    const active = tab === targetTab
+  function Tile({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
     return (
       <button
-        onClick={() => { setView('list'); setTab(targetTab) }}
+        onClick={onClick}
         className={cn(
           'flex flex-col items-start rounded-lg border bg-white px-4 py-3 text-left shadow-sm transition-colors',
           active ? 'border-brand ring-1 ring-brand/30' : 'border-gray-200 hover:border-brand/40'
@@ -356,58 +359,46 @@ export default function SchedulingHub({
         </p>
       </div>
 
-      {/* Summary tiles */}
+      {/* Summary tiles double as the primary nav: Today / Upcoming (Pending is
+          a shortcut to the default view, where pending shows on top). */}
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <Tile label="Today" value={counts.today} targetTab="appointments" />
-        <Tile label="Upcoming" value={counts.upcoming} targetTab="appointments" />
-        <Tile label="Pending" value={counts.pending} targetTab="pending" />
+        <Tile
+          label="Today" value={counts.today}
+          active={view === 'list' && section === 'today'}
+          onClick={() => { setView('list'); setSection('today') }}
+        />
+        <Tile
+          label="Upcoming" value={counts.upcoming}
+          active={view === 'list' && section === 'upcoming'}
+          onClick={() => { setView('list'); setSection('upcoming') }}
+        />
+        <Tile
+          label="Pending" value={counts.pending}
+          active={false}
+          onClick={() => { setView('list'); setSection('today') }}
+        />
       </div>
 
-      {/* View toggle + filter tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        {/* List / Calendar segmented switch */}
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
-          <button
-            onClick={() => setView('list')}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-sm transition-colors',
-              view === 'list' ? 'bg-brand text-white' : 'text-gray-600 hover:text-foreground'
-            )}
-          >
-            <List className="h-3.5 w-3.5" /> List
-          </button>
-          <button
-            onClick={() => setView('calendar')}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-sm transition-colors',
-              view === 'calendar' ? 'bg-brand text-white' : 'text-gray-600 hover:text-foreground'
-            )}
-          >
-            <CalendarDays className="h-3.5 w-3.5" /> Calendar
-          </button>
-        </div>
-
-        {/* Filter tabs — only relevant in list view */}
-        {view === 'list' && (
-          <div className="inline-flex gap-1">
-            {([
-              ['pending', 'Pending', counts.pending],
-              ['appointments', 'Appointments', listAppointments.length],
-            ] as [Tab, string, number][]).map(([key, labelText, count]) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-sm transition-colors',
-                  tab === key ? 'bg-gray-100 font-medium text-foreground' : 'text-gray-500 hover:text-foreground'
-                )}
-              >
-                {labelText}
-                <span className="ml-1.5 text-xs text-gray-400">{count}</span>
-              </button>
-            ))}
-          </div>
-        )}
+      {/* List / Calendar segmented switch */}
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+        <button
+          onClick={() => setView('list')}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-sm transition-colors',
+            view === 'list' ? 'bg-brand text-white' : 'text-gray-600 hover:text-foreground'
+          )}
+        >
+          <List className="h-3.5 w-3.5" /> List
+        </button>
+        <button
+          onClick={() => setView('calendar')}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-sm transition-colors',
+            view === 'calendar' ? 'bg-brand text-white' : 'text-gray-600 hover:text-foreground'
+          )}
+        >
+          <CalendarDays className="h-3.5 w-3.5" /> Calendar
+        </button>
       </div>
 
       {/* Calendar view (Phase 3) — day-level occupancy heat */}
@@ -417,16 +408,19 @@ export default function SchedulingHub({
           todayStr={todayStr}
           canManage={canManage}
         />
-      ) : tab === 'pending' ? (
-        /* ── Lane 1: reschedule requests ── */
-        pendingRequests.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-200 py-10 text-center text-sm text-gray-400">
-            No pending reschedule requests — you're all caught up.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {pendingRequests.map(req => (
-              <div key={req.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+      ) : (
+        <div className="space-y-5">
+          {/* Pending reschedule requests — shown on top of the default (Today)
+              view only, where they act as the action queue. */}
+          {section === 'today' && pendingRequests.length > 0 && (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold text-gray-500">
+                Reschedule requests
+                <span className="ml-1.5 text-xs font-normal text-gray-400">{pendingRequests.length}</span>
+              </h2>
+              <div className="flex flex-col gap-3">
+                {pendingRequests.map(req => (
+                  <div key={req.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div className="px-5 py-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -523,43 +517,67 @@ export default function SchedulingHub({
               </div>
             ))}
           </div>
-        )
-      ) : (
-        /* ── Appointments: browsable date-range + status list ── */
-        <div className="space-y-4">
-          {/* Filter bar — plain GET form; submitting re-queries server-side.
-              Defaults to today → ~3 months ahead; move From back to see past. */}
-          <form
-            method="GET"
-            action="/dashboard/scheduling"
-            className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
-          >
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500">From</label>
-              <input type="date" name="from" defaultValue={filter.from}
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500">To</label>
-              <input type="date" name="to" defaultValue={filter.to}
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-gray-500">Status</label>
-              <select name="status" defaultValue={filter.status}
-                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
-                {STATUS_OPTIONS.map(s => (
-                  <option key={s} value={s}>
-                    {s === 'all' ? 'All statuses' : s === 'no_show' ? 'No-show' : s[0].toUpperCase() + s.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Button type="submit" size="sm">Apply</Button>
-            <Link href="/dashboard/scheduling" className="text-sm text-gray-500 hover:text-foreground">Reset</Link>
-          </form>
+            </section>
+          )}
 
-          <ApptList items={listAppointments} emptyLabel="No appointments in this range." />
+          {section === 'today' ? (
+            <ApptList items={todayAppointments} emptyLabel="No appointments today." />
+          ) : (
+            <div className="space-y-3">
+              {/* Collapsible filter — Upcoming only; collapsed by default, with a
+                  summary of the active range. The ONLY place date browsing lives. */}
+              <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setFilterOpen(o => !o)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-sm"
+                >
+                  <span className="inline-flex items-center gap-2 text-gray-600">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-gray-400" />
+                    {filter.from} → {filter.to}
+                    {filter.status !== 'all' && ` · ${filter.status === 'no_show' ? 'No-show' : filter.status[0].toUpperCase() + filter.status.slice(1)}`}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-brand">
+                    {filterOpen ? 'Hide' : 'Filters'}
+                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', filterOpen && 'rotate-180')} />
+                  </span>
+                </button>
+                {filterOpen && (
+                  <form
+                    method="GET"
+                    action="/dashboard/scheduling"
+                    className="flex flex-wrap items-end gap-3 border-t border-gray-100 px-4 py-3"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-gray-500">From</label>
+                      <input type="date" name="from" defaultValue={filter.from}
+                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-gray-500">To</label>
+                      <input type="date" name="to" defaultValue={filter.to}
+                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-gray-500">Status</label>
+                      <select name="status" defaultValue={filter.status}
+                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+                        {STATUS_OPTIONS.map(s => (
+                          <option key={s} value={s}>
+                            {s === 'all' ? 'All statuses' : s === 'no_show' ? 'No-show' : s[0].toUpperCase() + s.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button type="submit" size="sm">Apply</Button>
+                    <Link href="/dashboard/scheduling" className="text-sm text-gray-500 hover:text-foreground">Reset</Link>
+                  </form>
+                )}
+              </div>
+
+              <ApptList items={upcomingAppointments} emptyLabel="No appointments in this range." />
+            </div>
+          )}
         </div>
       )}
     </main>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { canManageAppointments } from '@/lib/auth/roles'
 import DashboardNav from '@/components/DashboardNav'
 import RebookFlashBar from '@/components/rebooking/RebookFlashBar'
 
@@ -16,12 +17,14 @@ export default async function DashboardLayout({
     .eq('id', user?.id ?? '')
     .maybeSingle()
 
-  const isAdmin = staffProfile?.role === 'admin'
-  const isReceptionist = staffProfile?.role === 'receptionist'
+  const role = staffProfile?.role ?? null
+  const isAdmin = role === 'admin'
+  // One shared rule: anyone who can manage appointments gets the Scheduling
+  // link and the pending-reschedule flash bar (admin / doctor / receptionist).
+  const canSchedule = canManageAppointments(role)
 
-  // Flash bar: only show for receptionist and admin
   let pendingRebookCount = 0
-  if (isAdmin || isReceptionist) {
+  if (canSchedule) {
     const { count } = await supabase
       .from('rebook_requests')
       .select('id', { count: 'exact', head: true })
@@ -32,8 +35,8 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <DashboardNav isAdmin={isAdmin} isReceptionist={isReceptionist} />
-      {(isAdmin || isReceptionist) && (
+      <DashboardNav isAdmin={isAdmin} canSchedule={canSchedule} />
+      {canSchedule && (
         <RebookFlashBar pendingCount={pendingRebookCount} />
       )}
       <div className="mx-auto max-w-5xl px-4 sm:px-8 py-6 sm:py-8">

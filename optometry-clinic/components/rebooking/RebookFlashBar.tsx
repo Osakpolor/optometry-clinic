@@ -25,7 +25,7 @@ export default function RebookFlashBar({ pendingCount }: Props) {
           </p>
         </div>
         <Link
-          href="/dashboard/rebooking"
+          href="/dashboard/scheduling"
           className="text-sm font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-900 whitespace-nowrap"
         >
           Review now →

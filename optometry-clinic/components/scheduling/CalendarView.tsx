@@ -150,6 +150,7 @@ export default function CalendarView({ appointments, todayStr, canManage }: Prop
           const count = countByDay[dateStr] ?? 0
           const level = closed ? 'empty' : heatLevel(count)
           const isToday = dateStr === todayStr
+          const isPast = dateStr < todayStr
           const isSelected = dateStr === selectedDay
 
           if (closed) {
@@ -174,6 +175,9 @@ export default function CalendarView({ appointments, todayStr, canManage }: Prop
               className={cn(
                 'flex min-h-[64px] flex-col rounded-md border px-2 py-1.5 text-left transition-colors hover:border-brand/50',
                 HEAT[level],
+                // Past days read as history — the SAME heat scale, muted (lower
+                // opacity). Today and future keep full-strength colour.
+                isPast && 'opacity-60',
                 isToday && 'ring-2 ring-brand ring-inset',
                 isSelected && 'ring-2 ring-brand/70'
               )}

@@ -20,7 +20,6 @@ type Props = {
 const BASE_NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/patients', label: 'Patients' },
-  { href: '/dashboard/appointments', label: 'Appointments' },
   { href: '/dashboard/conversations', label: 'Conversations' },
 ]
 

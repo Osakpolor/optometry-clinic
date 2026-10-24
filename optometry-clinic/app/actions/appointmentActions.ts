@@ -39,6 +39,12 @@ export async function bookAppointment(
     service_type:     input.serviceType,
     notes:            input.note?.trim() || null,
     status:           'booked',
+    // Explicitly reminder-eligible — don't depend on a DB column default.
+    // Matters for appointments booked late (e.g. the doctor books the next
+    // visit right after this one): they must still be picked up by the cron.
+    reminder_sent_week_before: false,
+    reminder_sent_day_before:  false,
+    reminder_sent_day_of:      false,
   })
 
   if (error) return { error: error.message }
@@ -59,18 +65,66 @@ export async function rescheduleAppointment(
   }
 
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
 
-  // KNOWN GAP — Phase 4 (reschedule → reminder sync): changing the date here
-  // does NOT reset the reminder_sent_week_before / _day_before / _day_of
-  // flags. If a reminder already fired for the old date, the patient will
-  // NOT get a fresh reminder for the new date until Phase 4 clears those
-  // flags on reschedule. The brief assigns that fix to Phase 4 — not done here.
-  const { error } = await supabase
+  // Snapshot the pre-reschedule state for the audit trail (and the old date).
+  const { data: appt, error: fetchError } = await supabase
     .from('appointments')
-    .update({ appointment_date: dayTimestamp(newDate) })
+    .select('id, patient_id, appointment_date, service_type, status')
+    .eq('id', appointmentId)
+    .single()
+
+  if (fetchError || !appt) return { error: 'Appointment not found.' }
+
+  const newTimestamp = dayTimestamp(newDate)
+
+  // Change the day AND reset all three reminder flags so the daily cron
+  // (app/api/cron/appointment-reminders) re-sends the right reminder(s) for
+  // the NEW date — a patient already reminded for the old date is reminded
+  // again for the new one. Resetting all three treats the moved appointment
+  // like a fresh booking; the cron still guards each window by its own date
+  // range + flag, so each reminder fires at most once (no double-reminding).
+  const { error: updateError } = await supabase
+    .from('appointments')
+    .update({
+      appointment_date:          newTimestamp,
+      reminder_sent_week_before: false,
+      reminder_sent_day_before:  false,
+      reminder_sent_day_of:      false,
+    })
     .eq('id', appointmentId)
 
-  if (error) return { error: error.message }
+  if (updateError) return { error: updateError.message }
+
+  // Audit — a reschedule changes patient appointment data, so it is traceable
+  // (previous_date → new_date, who/what/when), the same way cancel is audited.
+  let staffName: string | null = null
+  if (user?.id) {
+    const { data: staff } = await supabase
+      .from('staff_profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .single()
+    staffName = staff?.full_name ?? null
+  }
+
+  const admin = createAdminClient()
+  await admin.from('audit_log').insert({
+    staff_id:   user?.id ?? null,
+    patient_id: appt.patient_id,
+    action:     'RESCHEDULE',
+    table_name: 'appointments',
+    record_id:  appt.id,
+    details: {
+      rescheduled_by_name: staffName,
+      rescheduled_by_role: role,
+      previous_date:       appt.appointment_date,
+      new_date:            newTimestamp,
+      service_type:        appt.service_type,
+      previous_status:     appt.status,
+    },
+  })
+
   return { success: true }
 }
 

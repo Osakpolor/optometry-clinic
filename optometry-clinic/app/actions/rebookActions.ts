@@ -68,6 +68,10 @@ export async function approveRebook(
       service_type:     req.service ?? 'Follow-up visit',
       notes:            req.notes ?? 'Rescheduled via WhatsApp',
       status:           'booked',
+      // Reminder-eligible from the start (don't rely on a DB default).
+      reminder_sent_week_before: false,
+      reminder_sent_day_before:  false,
+      reminder_sent_day_of:      false,
     })
     .select('id')
     .single()

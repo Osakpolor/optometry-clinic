@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getUserRole, canManageAppointments } from '@/lib/auth/roles'
-import { clinicDay, clinicToday, ACTIVE_STATUSES } from '@/lib/scheduling-config'
+import { clinicDay, clinicToday, OCCUPANCY_EXCLUDED_STATUSES } from '@/lib/scheduling-config'
 import SchedulingHub from '@/components/scheduling/SchedulingHub'
 
 export const dynamic = 'force-dynamic'
@@ -64,18 +64,20 @@ export default async function SchedulingPage({
     fileNumber: embed<{ file_number: string | null }>(r.patients)?.file_number ?? null,
   }))
 
-  // ── Calendar data: ACTIVE appointments only (booked/confirmed) ───────────
-  // Also the source for the Today / Upcoming summary tiles. Loaded across a
-  // window (start of last month → ~4 months ahead) so the month grid can
-  // navigate without a per-month refetch. Local-day grouping via clinicDay().
+  // ── Calendar data: every appointment EXCEPT cancelled ────────────────────
+  // Occupancy counts booked + confirmed + completed + no_show (only cancelled
+  // excluded), so a worked-through day keeps its real volume and the calendar
+  // matches the List. Also the source for the Today / Upcoming tiles. Loaded
+  // across a window so the month grid navigates without a per-month refetch.
   const now = new Date()
   const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
   const windowEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 5, 1))
+  const occExcluded = `(${OCCUPANCY_EXCLUDED_STATUSES.map(s => `"${s}"`).join(',')})`
 
   const { data: calRaw } = await supabase
     .from('appointments')
     .select('id, patient_id, appointment_date, service_type, status, patients(full_name)')
-    .in('status', [...ACTIVE_STATUSES])
+    .not('status', 'in', occExcluded)
     .gte('appointment_date', windowStart.toISOString())
     .lt('appointment_date', windowEnd.toISOString())
     .order('appointment_date', { ascending: true })

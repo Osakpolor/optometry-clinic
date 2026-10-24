@@ -28,7 +28,7 @@ type CalItem = {
 }
 
 type Props = {
-  appointments: CalItem[] // ACTIVE only (booked/confirmed) — see the page query
+  appointments: CalItem[] // every appointment EXCEPT cancelled — see the page query
   todayStr: string        // clinic-local YYYY-MM-DD
   canManage: boolean
 }
@@ -37,12 +37,14 @@ const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // State-only colour (see claude/engineering-standards.md § Colour discipline).
-// booked = common/default → neutral; confirmed = success → green.
+// booked = neutral/default; confirmed/completed = green; no_show = red.
 // NB: this is the day-detail status pill, NOT the occupancy heat scale below —
 // the heat (green/amber/red by count) encodes a value and is left as-is.
 const STATUS_PILL: Record<string, string> = {
   booked:    'bg-gray-100 text-gray-700 border-gray-200',
   confirmed: 'bg-green-50 text-green-700 border-green-200',
+  completed: 'bg-green-50 text-green-700 border-green-200',
+  no_show:   'bg-red-50 text-red-700 border-red-200',
 }
 
 // Heat colours for a day cell. These map to the levels defined by the
@@ -81,8 +83,9 @@ export default function CalendarView({ appointments, todayStr, canManage }: Prop
   const [cursor, setCursor] = useState<{ y: number; m: number }>({ y: ty, m: tm })
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
-  // Occupancy per local day. Everything passed in is already active-only, so a
-  // plain tally is the occupancy count.
+  // Occupancy per local day. Everything passed in is non-cancelled, so a plain
+  // tally is the occupancy count (completed/no_show count too — a worked day
+  // keeps its volume).
   const countByDay = useMemo(() => {
     const map: Record<string, number> = {}
     for (const a of appointments) {

@@ -24,10 +24,11 @@ export const OCCUPANCY = {
   AMBER_MAX: 10,
 } as const
 
-// Statuses that COUNT toward a day's occupancy. Cancelled, completed and
-// no_show are deliberately excluded so they never inflate the heat (a day full
-// of cancelled appointments must read as empty, not red).
-export const ACTIVE_STATUSES = ['booked', 'confirmed'] as const
+// Statuses EXCLUDED from a day's occupancy heat — everything else counts
+// (booked, confirmed, completed, no_show), so a worked-through day keeps its
+// real volume and the calendar matches the List. Only cancelled is left out,
+// so a day of nothing but cancellations reads as empty, not red.
+export const OCCUPANCY_EXCLUDED_STATUSES = ['cancelled'] as const
 
 export type HeatLevel = 'empty' | 'open' | 'filling' | 'full'
 

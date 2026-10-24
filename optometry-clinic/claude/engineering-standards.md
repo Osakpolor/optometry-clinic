@@ -72,3 +72,46 @@ resting list row.
   step, not on the resting trigger.
 - This rule is the standard going forward. Buttons elsewhere in the app that
   predate it are migrated opportunistically, not all at once.
+
+---
+
+## Colour discipline
+
+Colour is a signal, not decoration. The palette is deliberately small:
+
+- **One brand colour: teal `#0d7b5f`** (the `--primary` token / `brand`
+  utilities). Teal is for **primary actions, active/selected states, and
+  links** — nothing else. Don't introduce a second brand colour.
+- **Neutrals (greys) carry most of the UI**, including **default/common
+  states**. If a thing is in its ordinary resting state, it's neutral.
+- **Semantic colours convey STATE only, sparingly** — never decoratively:
+  - **green** = success / done (confirmed, completed)
+  - **amber** = needs attention (pending, awaiting action)
+  - **red** = danger (a destructive confirmation; a genuinely bad state)
+  
+  The *common* state is neutral, not a loud colour. A loud colour on every row
+  means it has stopped signalling anything.
+
+### Status pills (the standard mapping)
+
+| Status | Colour | Why |
+| --- | --- | --- |
+| `booked` | **neutral grey** | the common/default state |
+| `confirmed`, `completed` | **green** | success / done |
+| `pending` | **amber** | needs attention |
+| `no_show` | **red** | a bad outcome worth flagging |
+| `cancelled` | **muted grey** (lighter) | de-emphasised, not loud red |
+
+Don't give `booked`/`cancelled` arbitrary loud colours (no blue/purple
+"booked", no red "cancelled") — those are resting states and read as neutral.
+
+### Exception — colour that ENCODES a value
+
+When colour *is the data*, it's exempt from the "neutral by default" rule and
+must NOT be flattened:
+
+- the **calendar occupancy heat** (green/amber/red by appointment count),
+- the **OD = pink / OS = green** eye convention,
+- any **charts/visualisations** that map value → colour.
+
+There the colour carries meaning per value, so keep the full scale.

@@ -36,8 +36,12 @@ type Props = {
 const SERVICES = ['Eye exam', 'Glasses fitting', 'Contact lens fitting', 'Follow-up visit']
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+// State-only colour (see claude/engineering-standards.md § Colour discipline).
+// booked = common/default → neutral; confirmed = success → green.
+// NB: this is the day-detail status pill, NOT the occupancy heat scale below —
+// the heat (green/amber/red by count) encodes a value and is left as-is.
 const STATUS_PILL: Record<string, string> = {
-  booked:    'bg-blue-50 text-blue-700 border-blue-200',
+  booked:    'bg-gray-100 text-gray-700 border-gray-200',
   confirmed: 'bg-green-50 text-green-700 border-green-200',
 }
 

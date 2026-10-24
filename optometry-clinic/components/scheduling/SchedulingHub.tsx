@@ -51,13 +51,16 @@ type Props = {
 type Tab = 'pending' | 'today' | 'upcoming'
 type View = 'list' | 'calendar'
 
+// Colour = state only (see claude/engineering-standards.md § Colour discipline).
+// booked is the common/default state → neutral; green = done; amber = attention;
+// red = a bad outcome; cancelled is de-emphasised neutral, not loud red.
 const STATUS_PILL: Record<string, string> = {
-  booked:    'bg-blue-50 text-blue-700 border-blue-200',
-  confirmed: 'bg-green-50 text-green-700 border-green-200',
-  pending:   'bg-amber-50 text-amber-700 border-amber-200',
-  completed: 'bg-gray-50 text-gray-600 border-gray-200',
-  no_show:   'bg-red-50 text-red-600 border-red-200',
-  cancelled: 'bg-red-50 text-red-400 border-red-100',
+  booked:    'bg-gray-100 text-gray-700 border-gray-200',   // common/default — neutral
+  confirmed: 'bg-green-50 text-green-700 border-green-200',  // success
+  completed: 'bg-green-50 text-green-700 border-green-200',  // done
+  pending:   'bg-amber-50 text-amber-700 border-amber-200',  // needs attention
+  no_show:   'bg-red-50 text-red-700 border-red-200',        // bad outcome — flag it
+  cancelled: 'bg-gray-50 text-gray-400 border-gray-200',     // de-emphasised neutral
 }
 
 function formatDay(iso: string) {

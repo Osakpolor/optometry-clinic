@@ -3,9 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
+import { Menu, X, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 import SignOutButton from '@/components/SignOutButton'
 import { createClient } from '@/lib/supabase/client'
 import { getUnreadThreadCount } from '@/app/actions/conversationBadges'
@@ -17,11 +19,7 @@ type Props = {
   canSchedule?: boolean
 }
 
-const BASE_NAV_LINKS = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/dashboard/patients', label: 'Patients' },
-  { href: '/dashboard/conversations', label: 'Conversations' },
-]
+type NavLink = { href: string; label: string }
 
 export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
   const [open, setOpen] = useState(false)
@@ -30,24 +28,24 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
   const pathRef = useRef(pathname)
   useEffect(() => { pathRef.current = pathname }, [pathname])
 
-  // Build the nav link list based on role
-  const links = [
-    ...BASE_NAV_LINKS,
-    // Scheduling hub (reschedule requests + appointment book) — shown to anyone
-    // who can manage appointments: admin, doctor AND receptionist. Doctors get
-    // Scheduling but NOT the admin-only links below.
-    ...(canSchedule
-      ? [{ href: '/dashboard/scheduling', label: 'Scheduling' }]
-      : []),
-    // Admin-only links
-    ...(isAdmin
-      ? [
-          { href: '/dashboard/broadcasts', label: 'Broadcasts' },
-          { href: '/dashboard/staff', label: 'Staff' },
-          { href: '/dashboard/audit', label: 'Audit' },
-        ]
-      : []),
+  // Primary nav: Dashboard, Patients, Scheduling, Conversations.
+  const primaryLinks: NavLink[] = [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/dashboard/patients', label: 'Patients' },
+    ...(canSchedule ? [{ href: '/dashboard/scheduling', label: 'Scheduling' }] : []),
+    { href: '/dashboard/conversations', label: 'Conversations' },
   ]
+
+  // Admin/config items, grouped under an "Admin" menu. Admin-only — same access
+  // as before (these were all admin-only); a non-admin never sees the menu.
+  const adminLinks: NavLink[] = isAdmin
+    ? [
+        { href: '/dashboard/broadcasts', label: 'Broadcasts' },
+        { href: '/dashboard/staff', label: 'Staff' },
+        { href: '/dashboard/audit', label: 'Audit' },
+      ]
+    : []
+  const adminActive = adminLinks.some(l => pathname === l.href)
 
   // Recompute the unread count on mount and whenever the route changes
   // (opening the inbox marks threads read, so leaving it refreshes the badge).
@@ -72,15 +70,13 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
     return () => { supabase.removeChannel(ch) }
   }, [])
 
-  function label(link: { href: string; label: string }, mobile = false) {
+  function label(link: NavLink) {
     const showBadge = link.label === 'Conversations' && unread > 0
     return (
       <span className="inline-flex items-center gap-1.5">
         {link.label}
         {showBadge && (
-          <span
-            className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-brand text-white`}
-          >
+          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-brand text-white">
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -95,7 +91,7 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
           <span className="font-bold text-base sm:text-lg whitespace-nowrap">Olu Eye Clinic</span>
           <div className="hidden sm:flex items-center gap-1">
             <Separator orientation="vertical" className="h-5 mr-2" />
-            {links.map(link => (
+            {primaryLinks.map(link => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -108,6 +104,46 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
                 {label(link)}
               </Link>
             ))}
+
+            {/* Admin menu — admin only */}
+            {adminLinks.length > 0 && (
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded px-2 py-1 text-sm transition-colors outline-none',
+                      adminActive
+                        ? 'text-foreground font-medium'
+                        : 'text-muted-foreground hover:text-foreground',
+                      'aria-expanded:text-foreground'
+                    )}
+                  >
+                    Admin <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="start"
+                    sideOffset={6}
+                    className="z-50 min-w-[9rem] rounded-md border border-gray-200 bg-white p-1 shadow-md"
+                  >
+                    {adminLinks.map(l => (
+                      <DropdownMenu.Item key={l.href} asChild>
+                        <Link
+                          href={l.href}
+                          className={cn(
+                            'flex cursor-pointer rounded px-2 py-1.5 text-sm outline-none hover:bg-muted focus:bg-muted',
+                            pathname === l.href ? 'text-foreground font-medium' : 'text-gray-700'
+                          )}
+                        >
+                          {l.label}
+                        </Link>
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            )}
           </div>
         </div>
 
@@ -138,7 +174,7 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
       {open && (
         <div className="sm:hidden border-t border-border bg-white">
           <div className="px-4 py-2 flex flex-col">
-            {links.map(link => (
+            {primaryLinks.map(link => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -147,9 +183,29 @@ export default function DashboardNav({ isAdmin, canSchedule = false }: Props) {
                   pathname === link.href ? 'text-foreground font-medium' : 'text-muted-foreground'
                 }`}
               >
-                {label(link, true)}
+                {label(link)}
               </Link>
             ))}
+
+            {/* Admin group — admin only */}
+            {adminLinks.length > 0 && (
+              <div className="mt-1 border-t border-gray-100 pt-2">
+                <p className="pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Admin</p>
+                {adminLinks.map(l => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={() => setOpen(false)}
+                    className={`block py-2.5 text-sm transition-colors ${
+                      pathname === l.href ? 'text-foreground font-medium' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+
             <div className="py-3"><SignOutButton /></div>
           </div>
         </div>

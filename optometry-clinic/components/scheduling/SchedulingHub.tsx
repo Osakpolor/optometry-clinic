@@ -9,12 +9,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import { clinicDay } from '@/lib/scheduling-config'
 import CalendarView from '@/components/scheduling/CalendarView'
 import { approveRebook, declineRebook } from '@/app/actions/rebookActions'
 import {
   rescheduleAppointment,
-  cancelAppointment,
+  setAppointmentStatus,
 } from '@/app/actions/appointmentActions'
 
 type PendingRequest = {
@@ -39,17 +38,23 @@ type Appointment = {
   status: string
 }
 
+type Filter = { from: string; to: string; status: string }
+
 type Props = {
   pendingRequests: PendingRequest[]
-  appointments: Appointment[]
+  listAppointments: Appointment[]
   calendarAppointments: Appointment[]
   counts: { today: number; upcoming: number; pending: number }
   todayStr: string
   canManage: boolean
+  filter: Filter
+  initialTab: Tab
 }
 
-type Tab = 'pending' | 'today' | 'upcoming'
+type Tab = 'pending' | 'appointments'
 type View = 'list' | 'calendar'
+
+const STATUS_OPTIONS = ['all', 'booked', 'confirmed', 'completed', 'no_show', 'cancelled'] as const
 
 // Colour = state only (see claude/engineering-standards.md § Colour discipline).
 // booked is the common/default state → neutral; green = done; amber = attention;
@@ -96,41 +101,61 @@ function StatusPill({ status }: { status: string }) {
   )
 }
 
+type SetStatus = 'confirmed' | 'completed' | 'no_show' | 'cancelled'
+
 // One appointment row. Each row is its OWN component instance with its OWN
-// useTransition + open/confirm state, so acting on one row never flips the
-// pending/disabled state of any other row (the previous shared-state bug).
-// Quick-actions are Reschedule + Cancel only — no Confirm here (the `confirmed`
-// status is set from the manage/detail view, and later from a patient WhatsApp
-// reply). Cancel is QUIET at rest (ghost); the red/danger emphasis lives on the
-// confirmation step, which also guards against accidental cancels.
+// useTransition + mode state, so acting on one row never flips another row's
+// pending/disabled state. Controls: Reschedule + a compact status control
+// (confirmed / completed / no-show / cancelled — replaces the old per-row
+// Confirm button and the old Appointments page dropdown). Per the colour +
+// quiet-destructive conventions the triggers are quiet (ghost); the red
+// emphasis appears ONLY on the confirmation step for the destructive
+// transitions (cancelled, no-show).
 function AppointmentRow({
   a, canManage, todayStr,
 }: { a: Appointment; canManage: boolean; todayStr: string }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [rescheduling, setRescheduling] = useState(false)
+  const [mode, setMode] = useState<'idle' | 'reschedule' | 'status' | 'confirm'>('idle')
   const [rescheduleDate, setRescheduleDate] = useState('')
-  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  const [target, setTarget] = useState<'cancelled' | 'no_show' | null>(null)
+
+  // Terminal states aren't managed from the list.
+  const terminal = a.status === 'cancelled' || a.status === 'completed'
+
+  const statusActions = ([
+    { value: 'confirmed', label: 'Confirmed' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'no_show',   label: 'No-show' },
+    { value: 'cancelled', label: 'Cancel' },
+  ] as { value: SetStatus; label: string }[]).filter(o => o.value !== a.status)
 
   function doReschedule() {
     if (!rescheduleDate) { toast.error('Please choose a new date.'); return }
     startTransition(async () => {
       const res = await rescheduleAppointment(a.id, rescheduleDate)
       if (reportResult(res, `Appointment moved to ${formatDay(`${rescheduleDate}T12:00:00`)}.`)) {
-        setRescheduling(false)
-        router.refresh()
+        setMode('idle'); router.refresh()
       }
     })
   }
 
-  function doCancel() {
+  function applyStatus(status: SetStatus) {
     startTransition(async () => {
-      const res = await cancelAppointment(a.id)
-      if (reportResult(res, 'Appointment cancelled.')) {
-        setConfirmingCancel(false)
-        router.refresh()
-      }
+      const res = await setAppointmentStatus(a.id, status)
+      const msg =
+        status === 'confirmed' ? 'Appointment confirmed.'
+        : status === 'completed' ? 'Marked as completed.'
+        : status === 'no_show' ? 'Marked as no-show.'
+        : 'Appointment cancelled.'
+      if (reportResult(res, msg)) { setMode('idle'); setTarget(null); router.refresh() }
     })
+  }
+
+  // Destructive transitions go through the confirmation step; the rest apply now.
+  function chooseStatus(status: SetStatus) {
+    if (status === 'cancelled' || status === 'no_show') { setTarget(status); setMode('confirm') }
+    else applyStatus(status)
   }
 
   return (
@@ -150,9 +175,9 @@ function AppointmentRow({
         <StatusPill status={a.status} />
       </div>
 
-      {canManage && (
+      {canManage && !terminal && (
         <div className="mt-3">
-          {rescheduling ? (
+          {mode === 'reschedule' ? (
             <div className="flex items-end gap-2">
               <div className="flex flex-col gap-1">
                 <Label className="text-xs">New date</Label>
@@ -167,39 +192,53 @@ function AppointmentRow({
               <Button size="sm" onClick={doReschedule} disabled={isPending}>
                 {isPending ? 'Saving…' : 'Save'}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setRescheduling(false)} disabled={isPending}>
-                Cancel
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setMode('idle')} disabled={isPending}>Cancel</Button>
             </div>
-          ) : confirmingCancel ? (
-            // Red emphasis lives HERE, at the point of confirmation — not on the
-            // resting trigger above.
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Cancel this appointment?</span>
-              <Button size="sm" variant="destructive" onClick={doCancel} disabled={isPending}>
-                {isPending ? 'Cancelling…' : 'Yes, cancel'}
+          ) : mode === 'confirm' ? (
+            // Red lives HERE, at the point of confirmation — not on the resting trigger.
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">
+                {target === 'cancelled' ? 'Cancel this appointment?' : 'Mark this appointment as no-show?'}
+              </span>
+              <Button size="sm" variant="destructive" onClick={() => target && applyStatus(target)} disabled={isPending}>
+                {isPending ? 'Saving…' : target === 'cancelled' ? 'Yes, cancel' : 'Yes, no-show'}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmingCancel(false)} disabled={isPending}>
-                Keep
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setMode('status'); setTarget(null) }} disabled={isPending}>Back</Button>
+            </div>
+          ) : mode === 'status' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-400">Set status:</span>
+              {statusActions.map(o => (
+                <Button
+                  key={o.value}
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => chooseStatus(o.value)}
+                  disabled={isPending}
+                >
+                  {o.label}
+                </Button>
+              ))}
+              <Button size="sm" variant="ghost" onClick={() => setMode('idle')} disabled={isPending}>Close</Button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => { setConfirmingCancel(false); setRescheduleDate(a.date.slice(0, 10)); setRescheduling(true) }}
+                onClick={() => { setRescheduleDate(a.date.slice(0, 10)); setMode('reschedule') }}
               >
                 Reschedule
               </Button>
-              {/* Quiet at rest — low-weight ghost, not loud red. */}
+              {/* Quiet at rest — opens the compact status control. */}
               <Button
                 size="sm"
                 variant="ghost"
                 className="text-muted-foreground"
-                onClick={() => { setRescheduling(false); setConfirmingCancel(true) }}
+                onClick={() => setMode('status')}
               >
-                Cancel
+                Set status
               </Button>
             </div>
           )}
@@ -211,17 +250,19 @@ function AppointmentRow({
 
 export default function SchedulingHub({
   pendingRequests,
-  appointments,
+  listAppointments,
   calendarAppointments,
   counts,
   todayStr,
   canManage,
+  filter,
+  initialTab,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
   const [view, setView] = useState<View>('list')
-  const [tab, setTab] = useState<Tab>(counts.pending > 0 ? 'pending' : 'today')
+  const [tab, setTab] = useState<Tab>(initialTab)
 
   // Lane 1 — reschedule-request panels
   const [approvingId, setApprovingId] = useState<string | null>(null)
@@ -230,9 +271,6 @@ export default function SchedulingHub({
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [declineMsg, setDeclineMsg] = useState('')
   const [declineNote, setDeclineNote] = useState('')
-
-  const todayAppts = appointments.filter(a => clinicDay(a.date) === todayStr)
-  const upcomingAppts = appointments.filter(a => clinicDay(a.date) > todayStr)
 
   // ── Lane 1 handlers ──────────────────────────────────────────────────────
   function openApprove(req: PendingRequest) {
@@ -275,11 +313,11 @@ export default function SchedulingHub({
   }
 
   // ── Render helpers ───────────────────────────────────────────────────────
-  function Tile({ label, value, tabKey }: { label: string; value: number; tabKey: Tab }) {
-    const active = tab === tabKey
+  function Tile({ label, value, targetTab }: { label: string; value: number; targetTab: Tab }) {
+    const active = tab === targetTab
     return (
       <button
-        onClick={() => { setView('list'); setTab(tabKey) }}
+        onClick={() => { setView('list'); setTab(targetTab) }}
         className={cn(
           'flex flex-col items-start rounded-lg border bg-white px-4 py-3 text-left shadow-sm transition-colors',
           active ? 'border-brand ring-1 ring-brand/30' : 'border-gray-200 hover:border-brand/40'
@@ -320,9 +358,9 @@ export default function SchedulingHub({
 
       {/* Summary tiles */}
       <div className="grid grid-cols-3 gap-3 mb-5">
-        <Tile label="Today" value={counts.today} tabKey="today" />
-        <Tile label="Upcoming" value={counts.upcoming} tabKey="upcoming" />
-        <Tile label="Pending" value={counts.pending} tabKey="pending" />
+        <Tile label="Today" value={counts.today} targetTab="appointments" />
+        <Tile label="Upcoming" value={counts.upcoming} targetTab="appointments" />
+        <Tile label="Pending" value={counts.pending} targetTab="pending" />
       </div>
 
       {/* View toggle + filter tabs */}
@@ -354,8 +392,7 @@ export default function SchedulingHub({
           <div className="inline-flex gap-1">
             {([
               ['pending', 'Pending', counts.pending],
-              ['today', 'Today', counts.today],
-              ['upcoming', 'Upcoming', counts.upcoming],
+              ['appointments', 'Appointments', listAppointments.length],
             ] as [Tab, string, number][]).map(([key, labelText, count]) => (
               <button
                 key={key}
@@ -487,10 +524,43 @@ export default function SchedulingHub({
             ))}
           </div>
         )
-      ) : tab === 'today' ? (
-        <ApptList items={todayAppts} emptyLabel="No appointments today." />
       ) : (
-        <ApptList items={upcomingAppts} emptyLabel="No upcoming appointments." />
+        /* ── Appointments: browsable date-range + status list ── */
+        <div className="space-y-4">
+          {/* Filter bar — plain GET form; submitting re-queries server-side.
+              Defaults to today → ~3 months ahead; move From back to see past. */}
+          <form
+            method="GET"
+            action="/dashboard/scheduling"
+            className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
+          >
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500">From</label>
+              <input type="date" name="from" defaultValue={filter.from}
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500">To</label>
+              <input type="date" name="to" defaultValue={filter.to}
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-gray-500">Status</label>
+              <select name="status" defaultValue={filter.status}
+                className="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+                {STATUS_OPTIONS.map(s => (
+                  <option key={s} value={s}>
+                    {s === 'all' ? 'All statuses' : s === 'no_show' ? 'No-show' : s[0].toUpperCase() + s.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button type="submit" size="sm">Apply</Button>
+            <Link href="/dashboard/scheduling" className="text-sm text-gray-500 hover:text-foreground">Reset</Link>
+          </form>
+
+          <ApptList items={listAppointments} emptyLabel="No appointments in this range." />
+        </div>
       )}
     </main>
   )

@@ -147,6 +147,85 @@ export async function confirmAppointment(appointmentId: string): Promise<Result>
   return { success: true }
 }
 
+// Full status control for the Scheduling hub — set confirmed / completed /
+// no_show / cancelled. Clinically significant changes are audited (who/what/
+// when): cancelled, no_show and completed. A plain confirm is not audited.
+const SETTABLE_STATUSES = ['confirmed', 'completed', 'no_show', 'cancelled'] as const
+type SettableStatus = typeof SETTABLE_STATUSES[number]
+const STATUS_AUDIT_ACTION: Partial<Record<SettableStatus, string>> = {
+  cancelled: 'CANCEL',
+  no_show:   'NO_SHOW',
+  completed: 'COMPLETE',
+}
+
+export async function setAppointmentStatus(
+  appointmentId: string,
+  status: SettableStatus
+): Promise<Result> {
+  const role = await getUserRole()
+  if (!canManageAppointments(role)) {
+    return { error: 'You do not have permission to change appointment status.' }
+  }
+  if (!SETTABLE_STATUSES.includes(status)) {
+    return { error: 'Invalid status.' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: appt, error: fetchError } = await supabase
+    .from('appointments')
+    .select('id, patient_id, appointment_date, service_type, status')
+    .eq('id', appointmentId)
+    .single()
+  if (fetchError || !appt) return { error: 'Appointment not found.' }
+
+  const update: Record<string, any> = { status }
+  if (status === 'cancelled') {
+    // Mirror cancelAppointment's cancellation metadata.
+    update.cancelled_by_patient = false
+    update.cancellation_reason = 'Cancelled by staff'
+    update.cancelled_at = new Date().toISOString()
+  }
+
+  const { error: updateError } = await supabase
+    .from('appointments')
+    .update(update)
+    .eq('id', appointmentId)
+  if (updateError) return { error: updateError.message }
+
+  const action = STATUS_AUDIT_ACTION[status]
+  if (action) {
+    let staffName: string | null = null
+    if (user?.id) {
+      const { data: staff } = await supabase
+        .from('staff_profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single()
+      staffName = staff?.full_name ?? null
+    }
+    const admin = createAdminClient()
+    await admin.from('audit_log').insert({
+      staff_id:   user?.id ?? null,
+      patient_id: appt.patient_id,
+      action,
+      table_name: 'appointments',
+      record_id:  appt.id,
+      details: {
+        changed_by_name:  staffName,
+        changed_by_role:  role,
+        previous_status:  appt.status,
+        new_status:       status,
+        appointment_date: appt.appointment_date,
+        service_type:     appt.service_type,
+      },
+    })
+  }
+
+  return { success: true }
+}
+
 // Cancel = soft status change (the row is kept). Cancellation is a
 // destructive clinical action, so it is audited: who / what / when.
 export async function cancelAppointment(appointmentId: string): Promise<Result> {

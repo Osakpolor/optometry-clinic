@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { toTitleCase, firstName } from '@/lib/names'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -49,7 +50,7 @@ function SuccessScreen({ fullName, date, time }: { fullName: string; date: strin
       </div>
       <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Request received!</h1>
       <p className="mt-3 text-sm text-gray-500 leading-relaxed">
-        Thanks {fullName} — we've noted your preferred slot for <strong>{date}</strong> at <strong>{time}</strong>.
+        Thanks {firstName(fullName) || fullName} — we've noted your preferred slot for <strong>{date}</strong> at <strong>{time}</strong>.
         We'll call or WhatsApp you shortly to confirm.
       </p>
       <div className="mt-6 rounded-lg bg-brand/5 border border-brand/20 px-4 py-3 text-xs text-brand">
@@ -139,7 +140,9 @@ export default function BookPage() {
 
     // Save lead to Supabase
     const { error } = await supabase.from('leads').insert({
-      full_name: fullName,
+      // Normalize on save: store the lead's name Title-cased, so it stays clean
+      // if/when the lead is converted into a patient record.
+      full_name: toTitleCase(fullName),
       phone,
       email: email || null,
       service_interest: service,
@@ -302,7 +305,7 @@ export default function BookPage() {
 
           {/* Summary of step 1 */}
           <div className="rounded-lg border border-border bg-gray-50 px-4 py-3">
-            <p className="text-sm font-medium text-gray-900">{fullName}</p>
+            <p className="text-sm font-medium text-gray-900">{toTitleCase(fullName)}</p>
             <p className="text-xs text-gray-500 mt-0.5">{phone} · {service}</p>
           </div>
 

@@ -21,7 +21,7 @@ export async function sendVisitWhatsApp(
 
   const { data: patient, error: patientError } = await supabase
     .from('patients')
-    .select('full_name, phone')
+    .select('full_name, first_name, phone')
     .eq('id', patientId)
     .single()
 
@@ -64,6 +64,7 @@ export async function sendVisitWhatsApp(
   // Passed the guard: real, upcoming (or today) appointment → send the thank-you.
   return sendVisitThankYou({
     patientName: patient.full_name,
+    patientFirstName: patient.first_name,
     patientPhone: patient.phone,
     followUpDate: visit.follow_up_date,
   })

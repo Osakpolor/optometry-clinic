@@ -5,6 +5,7 @@ import EditVisitForm from '@/components/EditVisitForm'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getUserRole, canManageVisits } from '@/lib/auth/roles'
+import { toTitleCase } from '@/lib/names'
 
 export default async function EditVisitPage({ params }: { params: Promise<{ id: string; visitId: string }> }) {
   const { id, visitId } = await params
@@ -53,7 +54,7 @@ export default async function EditVisitPage({ params }: { params: Promise<{ id: 
         </h3>
       )}
       <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-        Edit visit — {patient?.full_name}
+        Edit visit — {toTitleCase(patient?.full_name)}
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {new Date(visit.visit_date).toLocaleDateString('en-GB', {

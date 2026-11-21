@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { EditPatientDialog } from '@/components/patients/EditPatientDialog'
 import { DeletePatientButton } from '@/components/patients/DeletePatientButton'
 import PatientDocuments from '@/components/PatientDocuments'
+import { toTitleCase } from '@/lib/names'
 import { AppointmentSlideOver } from '@/components/appointments/AppointmentSlideOver'
 import { canManageAppointments } from '@/lib/auth/roles'
 
@@ -98,7 +99,7 @@ export default async function PatientDetailPage({
           )}
 
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            {patient.full_name}
+            {toTitleCase(patient.full_name)}
           </h1>
 
           <div className="mt-2 flex flex-wrap gap-2 sm:gap-3">
@@ -133,6 +134,9 @@ export default async function PatientDetailPage({
             patient={{
               id:            patient.id,
               full_name:     patient.full_name     ?? '',
+              first_name:    patient.first_name    ?? null,
+              last_name:     patient.last_name     ?? null,
+              other_names:   patient.other_names   ?? null,
               phone:         patient.phone         ?? '',
               phone2:        patient.phone2        ?? '',
               address:       patient.address       ?? '',
@@ -145,7 +149,7 @@ export default async function PatientDetailPage({
           {userRole === 'admin' && (
             <DeletePatientButton
               patientId={patient.id}
-              patientName={patient.full_name ?? ''}
+              patientName={toTitleCase(patient.full_name)}
             />
           )}
           <Link href={`/dashboard/patients/${id}/visits/new`}>
@@ -183,7 +187,7 @@ export default async function PatientDetailPage({
                                        line-clamp-2">
                         {v.reason_for_visit ?? v.diagnosis ?? 'Visit record'}
                         {' · '}
-                        {v.staff_profiles?.full_name ?? 'Staff'}
+                        {toTitleCase(v.staff_profiles?.full_name) || 'Staff'}
                       </span>
                     </Link>
                   </li>
@@ -206,7 +210,7 @@ export default async function PatientDetailPage({
                 this clinic is walk-in and day-level only. */}
             <AppointmentSlideOver
               patientId={id}
-              patientName={patient.full_name ?? 'this patient'}
+              patientName={toTitleCase(patient.full_name) || 'this patient'}
               appointments={appointments ?? []}
               canManage={canManageAppointments(userRole)}
             />

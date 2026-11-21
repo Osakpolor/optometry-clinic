@@ -29,7 +29,7 @@ export async function sendManualReminder(
   const orClause = variants.map(p => `phone.eq.${p}`).join(',')
   const { data: patients } = await supabase
     .from('patients')
-    .select('id, full_name, phone')
+    .select('id, full_name, first_name, phone')
     .or(orClause)
     .limit(1)
   const patient = patients?.[0]
@@ -65,6 +65,7 @@ export async function sendManualReminder(
   const res = await sendAppointmentReminderTemplate({
     patientPhone: patient.phone,
     patientName: patient.full_name,
+    patientFirstName: patient.first_name,
     appointmentDate: appointmentText,
   })
   return res.success ? { ok: true } : { ok: false, error: res.error }

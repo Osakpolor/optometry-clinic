@@ -7,6 +7,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdmin } from '@supabase/supabase-js'
 import { getCurrentStaff, resolveAccess, type RoleAccess } from '@/lib/conversationAccess'
+import { toTitleCase } from '@/lib/names'
 
 function admin() {
   return createAdmin(
@@ -97,7 +98,8 @@ export async function getConversationThreads(): Promise<{
 
     threads.push({
       phoneNumber: phone,
-      displayName: patient?.name ?? leadName ?? phone,
+      // Title-case the name for display; leave a bare phone number untouched.
+      displayName: patient?.name ? toTitleCase(patient.name) : leadName ? toTitleCase(leadName) : phone,
       kind: patient ? 'patient' : leadName ? 'lead' : 'unknown',
       patientId: patient?.id ?? null,
       lastMessageAt: last.created_at,

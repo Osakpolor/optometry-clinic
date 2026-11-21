@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { toTitleCase } from '@/lib/names'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
@@ -97,9 +98,19 @@ export default function RegisterPatientForm({
     setErrorMsg('')
 
     const patientId = crypto.randomUUID()
-    const fullName = [firstName, lastName, otherNames]
-      .filter(Boolean)
-      .join(' ')
+    // Normalize on save: store a Title-cased name so new rows stay clean
+    // ("agu jones" / "AGU JONES" -> "Agu Jones"). Legacy rows are left as-is
+    // and normalized at display time instead.
+    const fullName = toTitleCase(
+      [firstName, lastName, otherNames].filter(Boolean).join(' ')
+    )
+
+    // Store the structured parts too. These are what give a reliable first name
+    // for WhatsApp greetings ("Dear <first_name>") — full_name alone can't tell
+    // first-first from surname-first. Title-cased; empty -> null.
+    const firstNamePart  = toTitleCase(firstName)  || null
+    const lastNamePart   = toTitleCase(lastName)   || null
+    const otherNamesPart = toTitleCase(otherNames) || null
 
     const fn = fileNumber.trim() || null
 
@@ -108,6 +119,9 @@ export default function RegisterPatientForm({
     const { error } = await supabase.from('patients').insert({
       id: patientId,
       full_name: fullName,
+      first_name: firstNamePart,
+      last_name: lastNamePart,
+      other_names: otherNamesPart,
       phone: phone1 || null,
       phone2: phone2 || null,
       sex: sex || null,

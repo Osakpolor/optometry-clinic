@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { getUserRole, canViewAudit } from '@/lib/auth/roles'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { toTitleCase } from '@/lib/names'
 import { Separator } from '@/components/ui/separator'
 
 export default async function AuditPage({
@@ -105,7 +106,7 @@ export default async function AuditPage({
               {entries.map((e: any) => {
                 const d = e.details ?? {}
                 const staffName =
-                  e.staff_profiles?.full_name ?? d.deleted_by_name ?? 'Unknown staff'
+                  toTitleCase(e.staff_profiles?.full_name ?? d.deleted_by_name) || 'Unknown staff'
                 const when = new Date(e.created_at).toLocaleString('en-GB', {
                   day: 'numeric', month: 'short', year: 'numeric',
                   hour: '2-digit', minute: '2-digit',

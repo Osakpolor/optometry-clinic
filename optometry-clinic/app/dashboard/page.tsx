@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import DashboardRefresh from '@/components/DashboardRefresh'
 import ConversationsPreview from '@/components/ConversationsPreview'
+import { toTitleCase } from '@/lib/names'
 
 // ── Date helpers ────────────────────────────────────────────────────────────
 
@@ -231,14 +232,14 @@ export default async function DashboardPage() {
                             >
                               <div className="flex flex-col gap-0.5 min-w-0">
                                 <span className="text-sm font-medium text-gray-900 group-hover:text-brand transition-colors truncate">
-                                  {v.patients?.full_name ?? 'Unknown patient'}
+                                  {toTitleCase(v.patients?.full_name) || 'Unknown patient'}
                                 </span>
                                 <span className="text-xs text-muted-foreground truncate">
                                   {v.reason_for_visit ?? v.diagnosis ?? 'Visit record'}
                                 </span>
                               </div>
                               <span className="text-xs text-muted-foreground ml-4 shrink-0">
-                                {v.staff_profiles?.full_name ?? 'Staff'}
+                                {toTitleCase(v.staff_profiles?.full_name) || 'Staff'}
                               </span>
                             </Link>
                           </li>
@@ -281,7 +282,7 @@ export default async function DashboardPage() {
                         className="group flex items-center justify-between py-3 hover:bg-gray-50 -mx-1 px-1 rounded transition-colors"
                       >
                         <span className="text-sm font-medium text-gray-900 group-hover:text-brand transition-colors">
-                          {p.full_name}
+                          {toTitleCase(p.full_name)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {p.phone ?? '—'}
@@ -351,7 +352,7 @@ export default async function DashboardPage() {
                             className="group flex items-center justify-between gap-2 hover:opacity-80 transition-opacity"
                           >
                             <span className="text-sm font-medium text-gray-900 group-hover:text-brand transition-colors truncate">
-                              {f.patients?.full_name}
+                              {toTitleCase(f.patients?.full_name)}
                             </span>
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${urgencyClass}`}>
                               {dateLabel2}

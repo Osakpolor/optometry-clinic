@@ -9,6 +9,7 @@ import ExportPrescriptionPDF from '@/components/visits/ExportPrescriptionPDF'
 import { DeleteVisitButton } from '@/components/visits/DeleteVisitButton'
 import { getUserRole } from '@/lib/auth/roles'
 import { SendClinicalSummaryButton } from '@/components/visits/SendClinicalSummaryButton'
+import { toTitleCase } from '@/lib/names'
 
 function Row({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null
@@ -318,7 +319,7 @@ export default async function VisitDetailPage({
         href={`/dashboard/patients/${id}`}
         className="text-sm text-muted-foreground hover:underline"
       >
-        ← {patient?.full_name ?? 'Patient'}
+        ← {toTitleCase(patient?.full_name) || 'Patient'}
       </Link>
 
       {/* Visit header */}
@@ -335,12 +336,12 @@ export default async function VisitDetailPage({
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">
               {(visit as any).doctor?.full_name
-                ? `Seen by ${(visit as any).doctor.full_name}`
+                ? `Seen by ${toTitleCase((visit as any).doctor.full_name)}`
                 : 'Imported record'}
             </span>
             {(visit as any).editor?.full_name && (
               <span className="text-sm text-muted-foreground">
-                · Last edited by {(visit as any).editor.full_name}
+                · Last edited by {toTitleCase((visit as any).editor.full_name)}
               </span>
             )}
           </div>
@@ -350,7 +351,7 @@ export default async function VisitDetailPage({
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <ExportPrescriptionPDF
             patient={{
-              full_name: patient?.full_name ?? 'Patient',
+              full_name: toTitleCase(patient?.full_name) || 'Patient',
               legacy_id: patient?.legacy_id,
             }}
             visit={visit}
@@ -364,7 +365,7 @@ export default async function VisitDetailPage({
               <DeleteVisitButton
                 visitId={visitId}
                 patientId={id}
-                patientName={patient?.full_name ?? 'this patient'}
+                patientName={toTitleCase(patient?.full_name) || 'this patient'}
                 visitDate={visitDateLabel}
               />
             )}
@@ -427,7 +428,7 @@ export default async function VisitDetailPage({
                 <li key={i} className="text-xs text-gray-400">
                   {entry.action === 'INSERT' ? 'Created' : 'Edited'} by{' '}
                   <span className="text-gray-500">
-                    {entry.staff_profiles?.full_name ?? 'Unknown'}
+                    {toTitleCase(entry.staff_profiles?.full_name) || 'Unknown'}
                   </span>
                   {' · '}
                   {new Date(entry.created_at).toLocaleDateString('en-GB', {

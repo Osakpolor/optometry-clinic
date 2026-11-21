@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   for (const w of windows) {
     const { data: appts, error } = await supabase
       .from('appointments')
-      .select(`id, appointment_date, ${w.flag}, patients(full_name, phone)`)
+      .select(`id, appointment_date, ${w.flag}, patients(full_name, first_name, phone)`)
       .gte('appointment_date', w.start.toISOString())
       .lt('appointment_date', w.end.toISOString())
       .eq(w.flag, false)
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
       const result = await sendAppointmentReminderTemplate({
         patientPhone: patient.phone,
         patientName: patient.full_name,
+        patientFirstName: patient.first_name,
         appointmentDate: fmtDate(apt.appointment_date),
       })
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { toTitleCase } from "@/lib/names";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -13,6 +14,10 @@ import { toast } from "sonner";
 type Patient = {
   id: string;
   full_name: string;
+  // Structured name parts — the greeting discriminator. Null on legacy rows.
+  first_name: string | null;
+  last_name: string | null;
+  other_names: string | null;
   phone: string;
   phone2: string;
   address: string;
@@ -35,6 +40,9 @@ export function EditPatientDialog({ patient, userRole }: Props) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     full_name:     patient.full_name    ?? "",
+    first_name:    patient.first_name   ?? "",
+    last_name:     patient.last_name    ?? "",
+    other_names:   patient.other_names  ?? "",
     phone:         patient.phone        ?? "",
     phone2:        patient.phone2       ?? "",
     address:       patient.address      ?? "",
@@ -61,7 +69,17 @@ export function EditPatientDialog({ patient, userRole }: Props) {
     // even if someone manipulates the form client-side, the RLS policy on
     // the patients table will block the write for non-admins.
     const payload: Record<string, string | null> = {
-      full_name:     form.full_name.trim(),
+      // Normalize on save: store the name Title-cased (non-destructive to other
+      // patients; legacy rows are normalized at display time).
+      full_name:     toTitleCase(form.full_name.trim()),
+      // Structured greeting-name parts. Optional and independent of full_name:
+      // full_name stays the display source of truth, while first_name is what a
+      // WhatsApp greeting uses. Filling first_name here turns a legacy record
+      // into a correctly-greetable one; leaving it blank keeps the safe
+      // full-name greeting. Empty -> null (preserves the NULL = legacy signal).
+      first_name:    toTitleCase(form.first_name.trim())  || null,
+      last_name:     toTitleCase(form.last_name.trim())   || null,
+      other_names:   toTitleCase(form.other_names.trim()) || null,
       phone:         form.phone.trim()    || null,
       phone2:        form.phone2.trim()   || null,
       address:       form.address.trim()  || null,
@@ -158,6 +176,45 @@ export function EditPatientDialog({ patient, userRole }: Props) {
                 onChange={handleChange}
                 className="text-sm font-medium text-gray-900"
               />
+            </div>
+
+            {/* Greeting name — optional structured parts. These drive WhatsApp
+                greetings ("Dear <first name>"). Leaving them blank keeps the
+                safe full-name greeting for legacy records. */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Greeting name
+                <span className="ml-1.5 normal-case text-xs text-muted-foreground/60 font-normal tracking-normal">
+                  optional
+                </span>
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <Input
+                  name="first_name"
+                  value={form.first_name}
+                  onChange={handleChange}
+                  placeholder="First"
+                  className="text-sm"
+                />
+                <Input
+                  name="last_name"
+                  value={form.last_name}
+                  onChange={handleChange}
+                  placeholder="Last"
+                  className="text-sm"
+                />
+                <Input
+                  name="other_names"
+                  value={form.other_names}
+                  onChange={handleChange}
+                  placeholder="Other"
+                  className="text-sm"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Used for WhatsApp greetings (&ldquo;Dear {form.first_name.trim() || "—"}&rdquo;).
+                Leave blank to greet with the full name.
+              </p>
             </div>
 
             {/* Phone row */}

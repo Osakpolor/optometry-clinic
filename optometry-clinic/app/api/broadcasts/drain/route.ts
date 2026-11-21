@@ -40,7 +40,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getSettings } from '@/lib/settings'
 import { sendBroadcastTemplate, type BroadcastSendInput } from '@/lib/broadcasts'
-import { firstName } from '@/lib/names'
+import { greetingName } from '@/lib/names'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Hobby ceiling; the batch loop below stays under it.
@@ -55,13 +55,15 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// Derive a safe first name from a patient's full_name for the {{first_name}}
-// token, via the shared helper (strips titles + Title-cases: "CHIEF AGU" →
-// "Agu"). Meta rejects an empty {{1}}, so fall back to a neutral greeting.
-// firstName() already trims/collapses internal whitespace, so a stored name
-// with stray newlines/tabs still yields a clean single-token param.
-function firstNameFrom(fullName: string | null | undefined): string {
-  return firstName(fullName) || 'there'
+// Derive a safe greeting name for the {{first_name}} token. Prefers the stored
+// first_name column; for legacy rows without it, falls back to the FULL name
+// (not a guessed token — a surname-first blob would otherwise greet by the
+// surname). Meta rejects an empty {{1}}, so fall back to a neutral greeting.
+function firstNameFrom(
+  firstNameCol: string | null | undefined,
+  fullName: string | null | undefined,
+): string {
+  return greetingName({ firstName: firstNameCol, fullName }) || 'there'
 }
 
 // Replace supported personalisation tokens in each body param with THIS
@@ -190,7 +192,7 @@ export async function GET(req: NextRequest) {
 
     const { data: batch, error: batchErr } = await admin
       .from('broadcast_recipients')
-      .select('id, phone, patient_id, patients(marketing_opted_out, full_name)')
+      .select('id, phone, patient_id, patients(marketing_opted_out, full_name, first_name)')
       .eq('broadcast_id', broadcast.id)
       .eq('status', 'queued')
       .order('id', { ascending: true })
@@ -225,7 +227,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Personalise {{first_name}} (and any future tokens) for THIS recipient.
-      const firstName = firstNameFrom(patient?.full_name)
+      const firstName = firstNameFrom(patient?.first_name, patient?.full_name)
       const input: BroadcastSendInput = {
         ...baseInput,
         bodyParams: resolvePersonalisedParams(rawParams, firstName),

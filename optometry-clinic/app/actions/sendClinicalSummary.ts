@@ -39,7 +39,7 @@ export async function sendClinicalSummary(
 
   const { data: patient, error: patientError } = await supabase
     .from('patients')
-    .select('full_name, phone')
+    .select('full_name, first_name, phone')
     .eq('id', visit.patient_id)
     .single()
 
@@ -52,6 +52,7 @@ export async function sendClinicalSummary(
 
   const result = await sendVisitSummaryWhatsApp({
     patientName: patient.full_name,
+    patientFirstName: patient.first_name,
     patientPhone: patient.phone,
     diagnosis: visit.diagnosis,
     medications: visit.medications ?? [],

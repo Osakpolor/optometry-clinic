@@ -134,6 +134,9 @@ export default async function PatientDetailPage({
             patient={{
               id:            patient.id,
               full_name:     patient.full_name     ?? '',
+              first_name:    patient.first_name    ?? null,
+              last_name:     patient.last_name     ?? null,
+              other_names:   patient.other_names   ?? null,
               phone:         patient.phone         ?? '',
               phone2:        patient.phone2        ?? '',
               address:       patient.address       ?? '',

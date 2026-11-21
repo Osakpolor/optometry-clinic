@@ -75,6 +75,28 @@ export function toTitleCase(name: string | null | undefined): string {
 }
 
 /**
+ * Choose the name to greet a patient by, given both a (possibly null) stored
+ * structured first name and the full_name blob.
+ *
+ *   - first_name present  -> greet by it, Title-cased ("Dear Osakpolor").
+ *   - first_name absent    -> this is a legacy/unstructured record whose name
+ *     ORDER is unknown, so greet with the WHOLE name, Title-cased, NOT the first
+ *     token ("Dear Omoregie Osakpolor"). Greeting by the first token would say
+ *     "Dear Omoregie" — the surname — for surname-first records.
+ *
+ * Returns '' only when both are empty (callers that must never send an empty
+ * greeting should supply their own fallback).
+ */
+export function greetingName(opts: {
+  firstName?: string | null
+  fullName?: string | null
+}): string {
+  const fn = (opts.firstName ?? '').trim()
+  if (fn) return toTitleCase(fn)
+  return toTitleCase(opts.fullName ?? '')
+}
+
+/**
  * Derive a first name for a greeting: strip a leading title (Dr, Chief, Mr…),
  * then return the first remaining token, Title-cased.
  *   "Chief Agu Jones Mary" -> "Agu"

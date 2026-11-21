@@ -5,7 +5,7 @@
 import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { getSettings, isAllowedRecipient } from '@/lib/settings'
-import { firstName } from '@/lib/names'
+import { firstName, greetingName } from '@/lib/names'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`
@@ -169,10 +169,12 @@ export async function sendAppointmentReminder({
 export async function sendAppointmentReminderTemplate({
   patientPhone,
   patientName,
+  patientFirstName = null,
   appointmentDate,
 }: {
   patientPhone: string
   patientName: string
+  patientFirstName?: string | null
   appointmentDate: string
 }): Promise<{ success: boolean; error?: string }> {
   const to = formatNigerianPhone(patientPhone)
@@ -192,9 +194,11 @@ export async function sendAppointmentReminderTemplate({
     return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
   }
 
-  // Greet by first name only (strip titles). Fall back to the full name so a
-  // template body param {{1}} is never empty (Meta rejects an empty param).
-  const greetName = firstName(patientName) || patientName
+  // Greet by the stored first name when we have one; otherwise fall back to the
+  // FULL name (never a guessed token — a legacy surname-first blob would greet
+  // by the surname). Final `|| patientName` guards against an empty {{1}}, which
+  // Meta rejects.
+  const greetName = greetingName({ firstName: patientFirstName, fullName: patientName }) || patientName
 
   const body = {
     messaging_product: 'whatsapp',
@@ -258,10 +262,12 @@ export async function sendAppointmentReminderTemplate({
 
 export async function sendVisitThankYou({
   patientName,
+  patientFirstName = null,
   patientPhone,
   followUpDate,
 }: {
   patientName: string
+  patientFirstName?: string | null
   patientPhone: string
   followUpDate: string | null
 }): Promise<{ success: boolean; error?: string }> {
@@ -298,9 +304,8 @@ export async function sendVisitThankYou({
     ? formatLongDate(followUpDate)
     : 'to be scheduled — please contact the clinic'
 
-  // Greet by first name only (strip titles); fall back to full name so {{1}}
-  // is never an empty template param.
-  const greetName = firstName(patientName) || patientName
+  // Stored first name when present; otherwise the full name (not a token).
+  const greetName = greetingName({ firstName: patientFirstName, fullName: patientName }) || patientName
 
   const body = {
     messaging_product: 'whatsapp',
@@ -357,12 +362,14 @@ export async function sendVisitThankYou({
 
 export async function sendVisitSummaryWhatsApp({
   patientName,
+  patientFirstName = null,
   patientPhone,
   diagnosis,
   medications,
   followUpDate,
 }: {
   patientName: string
+  patientFirstName?: string | null
   patientPhone: string
   diagnosis: string | null
   medications: any[]
@@ -396,9 +403,8 @@ export async function sendVisitSummaryWhatsApp({
   const diagnosisText = diagnosis?.trim() || 'See clinic notes'
   const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
 
-  // Greet by first name only (strip titles); fall back to full name so {{1}}
-  // is never an empty template param.
-  const greetName = firstName(patientName) || patientName
+  // Stored first name when present; otherwise the full name (not a token).
+  const greetName = greetingName({ firstName: patientFirstName, fullName: patientName }) || patientName
 
   const body = {
     messaging_product: 'whatsapp',

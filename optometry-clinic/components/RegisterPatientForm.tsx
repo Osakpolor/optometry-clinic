@@ -105,6 +105,13 @@ export default function RegisterPatientForm({
       [firstName, lastName, otherNames].filter(Boolean).join(' ')
     )
 
+    // Store the structured parts too. These are what give a reliable first name
+    // for WhatsApp greetings ("Dear <first_name>") — full_name alone can't tell
+    // first-first from surname-first. Title-cased; empty -> null.
+    const firstNamePart  = toTitleCase(firstName)  || null
+    const lastNamePart   = toTitleCase(lastName)   || null
+    const otherNamesPart = toTitleCase(otherNames) || null
+
     const fn = fileNumber.trim() || null
 
     const ageInt = age.trim() ? parseInt(age.trim(), 10) : null
@@ -112,6 +119,9 @@ export default function RegisterPatientForm({
     const { error } = await supabase.from('patients').insert({
       id: patientId,
       full_name: fullName,
+      first_name: firstNamePart,
+      last_name: lastNamePart,
+      other_names: otherNamesPart,
       phone: phone1 || null,
       phone2: phone2 || null,
       sex: sex || null,

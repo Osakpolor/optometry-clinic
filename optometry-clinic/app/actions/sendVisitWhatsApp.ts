@@ -13,22 +13,22 @@
 //      today-or-later. No date / past date -> skip (we never say "your next
 //      appointment is <blank/old>").
 //   2. Once-only guard (dedup) — never double-send the thank-you for the same
-//      patient + same appointment date. Implemented with the visit_records
-//      `thankyou_sent_at` column under this invariant:
-//
-//        thankyou_sent_at IS NOT NULL  ⟺  a thank-you was already sent for THIS
-//        visit's CURRENT follow_up_date.
-//
-//      Maintained by: stamping thankyou_sent_at after a successful send, and
-//      (in EditVisitForm) clearing it whenever follow_up_date is changed, so a
-//      genuinely new/changed future date can fire again. The dedup check looks
-//      across ALL of the patient's visits for that date, so a SECOND same-day
-//      visit with the same date is correctly suppressed, while a re-save of an
-//      already-sent visit is also suppressed (it finds its own stamp).
+//      patient + same appointment date. Keyed on `thankyou_sent_for_date`: the
+//      DATE a thank-you was actually sent FOR (recorded at send time). Dedup is
+//      simply "does any visit for this patient have thankyou_sent_for_date =
+//      targetDate?" This is fully server-authoritative and needs NO client-side
+//      date comparison (the previous approach compared the incoming date to the
+//      client's STALE originally-loaded value and re-sent on every re-save):
+//        • re-saving the same date  -> row already has that sent-for-date -> skip
+//        • a genuinely new/changed date -> no row has it yet -> send
+//        • a 2nd same-day visit, same date -> the 1st visit's row has it -> skip
+//      No clearing is ever required, so a re-save can never wipe the marker.
+//      (`thankyou_sent_at` is kept purely as an audit timestamp of WHEN.)
 //   3. Messaging controls (automated_sends_enabled + test-mode allowlist) are
 //      enforced inside sendVisitThankYou.
 //
-// NOTE: `thankyou_sent_at` already exists on visit_records — no migration.
+// NOTE: `thankyou_sent_for_date` is an additive migration (see supabase/
+// migrations). `thankyou_sent_at` already existed.
 
 import { createClient } from '@/lib/supabase/server'
 import { sendVisitThankYou } from '@/lib/whatsapp'
@@ -62,7 +62,7 @@ export async function sendVisitWhatsApp(
 
   const { data: visit, error: visitError } = await supabase
     .from('visit_records')
-    .select('follow_up_date, thankyou_sent_at')
+    .select('follow_up_date')
     .eq('id', visitId)
     .single()
 
@@ -88,15 +88,15 @@ export async function sendVisitWhatsApp(
   }
 
   // -- Guard 2: once-only (patient + appointment date) -------------------------
-  // Has a thank-you already gone out for THIS patient and THIS date — on this
-  // visit (a re-save) or any sibling visit (a second same-day visit)? If so,
-  // don't send again. This is the deliberate dedup.
+  // Has a thank-you already gone out for THIS patient FOR THIS date — on this
+  // visit (a re-save) or any sibling visit (a second same-day visit)? Keyed on
+  // the recorded sent-for-date, so this never depends on client state and a
+  // re-save can never wipe it. If found, don't send again.
   const { data: alreadySentRows, error: dedupError } = await supabase
     .from('visit_records')
     .select('id')
     .eq('patient_id', patientId)
-    .eq('follow_up_date', appointmentDate)
-    .not('thankyou_sent_at', 'is', null)
+    .eq('thankyou_sent_for_date', appointmentDate)
     .limit(1)
 
   if (dedupError) {
@@ -124,7 +124,10 @@ export async function sendVisitWhatsApp(
   if (result.success) {
     await supabase
       .from('visit_records')
-      .update({ thankyou_sent_at: new Date().toISOString() })
+      .update({
+        thankyou_sent_for_date: appointmentDate,       // dedup key
+        thankyou_sent_at: new Date().toISOString(),     // audit: when
+      })
       .eq('id', visitId)
   }
 

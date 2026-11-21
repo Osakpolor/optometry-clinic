@@ -278,6 +278,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [notes, setNotes] = useState(visit.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  // Hard double-submit guard: refs update synchronously, so a rapid second
+  // click is rejected before React re-renders the disabled button.
+  const isSubmittingRef = useRef(false)
 
   // ── Unsaved changes guard ──
   // Snapshot all current field values into one object and compare against
@@ -315,6 +318,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
 
   async function handleSubmit(ev: FormEvent) {
     ev.preventDefault()
+    // Reject re-entry (rapid re-clicks) before the button's disabled state paints.
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setSaving(true)
     setErrorMsg('')
 
@@ -327,12 +333,6 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       freq: d.freq || null,
       duration: d.duration || null,
     }))
-
-    // Did the appointment date change on this edit? If so, clear the stale
-    // thank-you stamp so the once-only guard lets a genuinely new/changed future
-    // date fire again. (thankyou_sent_at means "sent for the CURRENT date".)
-    const originalFollowUp = (visit.follow_up_date ?? '').slice(0, 10)
-    const dateChanged = (nextAppointment || '') !== originalFollowUp
 
     const { error } = await supabase.from('visit_records').update({
       medical_history: medicalHistory || null,
@@ -395,13 +395,14 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       notes: notes || null,
       updated_by: user?.id ?? null,
       updated_at: new Date().toISOString(),
-      // Reset the once-only marker when the date changes (undefined is dropped
-      // from the payload, so an unchanged date leaves the stamp intact).
-      thankyou_sent_at: dateChanged ? null : undefined,
     }).eq('id', visitId)
 
-    setSaving(false)
-    if (error) { setErrorMsg(error.message); return }
+    if (error) {
+      setErrorMsg(error.message)
+      setSaving(false)
+      isSubmittingRef.current = false
+      return
+    }
 
     if (nextAppointment) {
       await supabase.from('appointments').upsert({
@@ -415,23 +416,23 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       })
     }
 
-    // Fire the post-visit thank-you through the shared action — same guards as
-    // the new-visit save, plus the once-only dedup. Awaited so it completes
-    // before we navigate; the visit is already saved, so a WhatsApp failure
-    // never risks the clinical record.
-    try {
-      const waResult = await sendVisitWhatsApp(patientId, visitId)
-      if (!waResult.success && !waResult.alreadySent) {
-        console.warn('Thank-you not sent on edit:', waResult.error)
-      }
-    } catch (err) {
+    // Fire the post-visit thank-you through the shared action — FIRE-AND-FORGET
+    // so it never blocks the success confirmation or navigation (a slow/hanging
+    // WhatsApp call must not make the save look stuck). The visit is already
+    // saved, and the once-only dedup lives server-side, so firing once here is
+    // safe. The server decides whether to actually send.
+    void sendVisitWhatsApp(patientId, visitId).catch((err) =>
       console.error('Thank-you send failed on edit:', err)
-    }
+    )
 
+    // Show success and navigate exactly like the new-visit save. Keep the button
+    // disabled (saving || savedOk) the whole time so it can't be re-clicked.
     setSavedOk(true)
     guard.allowNextNavigation()
-    router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
-    router.refresh()
+    setTimeout(() => {
+      router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
+      router.refresh()
+    }, 900)
   }
 
   return (
@@ -677,8 +678,12 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       <SectionHeader title="Notes" />
       <YellowTextarea label="" value={notes} onChange={setNotes} rows={4} />
 
-      <button type="submit" disabled={saving} className="mt-4 rounded bg-black px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">
-        {saving ? 'Saving...' : 'Save changes'}
+      <button
+        type="submit"
+        disabled={saving || savedOk}
+        className={`mt-4 rounded px-6 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-70 ${savedOk ? 'bg-green-600' : 'bg-black'}`}
+      >
+        {savedOk ? '✓ Saved' : saving ? 'Saving...' : 'Save changes'}
       </button>
       {errorMsg && <p className="mt-2 text-sm text-red-600">{errorMsg}</p>}
     </form>

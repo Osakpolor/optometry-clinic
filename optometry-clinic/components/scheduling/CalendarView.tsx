@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { toTitleCase } from '@/lib/names'
 import {
   clinicDay,
   heatLevel,
@@ -330,7 +331,7 @@ function DayPanel({
             {selected ? (
               <div className="flex items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-[#171717]">{selected.full_name ?? 'Unnamed'}</p>
+                  <p className="text-sm font-medium text-[#171717]">{toTitleCase(selected.full_name) || 'Unnamed'}</p>
                   <p className="text-xs text-gray-500">
                     {selected.file_number ? `#${selected.file_number}` : selected.phone ?? ''}
                   </p>
@@ -358,7 +359,7 @@ function DayPanel({
                           onClick={() => setSelected(p)}
                           className="flex w-full items-center justify-between gap-2 border-b border-gray-50 px-3 py-2 text-left last:border-0 hover:bg-gray-50"
                         >
-                          <span className="text-sm text-[#171717]">{p.full_name ?? 'Unnamed'}</span>
+                          <span className="text-sm text-[#171717]">{toTitleCase(p.full_name) || 'Unnamed'}</span>
                           <span className="text-xs text-gray-400">{p.file_number ? `#${p.file_number}` : p.phone ?? ''}</span>
                         </button>
                       ))

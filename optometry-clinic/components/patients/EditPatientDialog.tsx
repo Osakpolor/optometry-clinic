@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { toTitleCase } from "@/lib/names";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -61,7 +62,9 @@ export function EditPatientDialog({ patient, userRole }: Props) {
     // even if someone manipulates the form client-side, the RLS policy on
     // the patients table will block the write for non-admins.
     const payload: Record<string, string | null> = {
-      full_name:     form.full_name.trim(),
+      // Normalize on save: store the name Title-cased (non-destructive to other
+      // patients; legacy rows are normalized at display time).
+      full_name:     toTitleCase(form.full_name.trim()),
       phone:         form.phone.trim()    || null,
       phone2:        form.phone2.trim()   || null,
       address:       form.address.trim()  || null,

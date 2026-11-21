@@ -40,6 +40,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getSettings } from '@/lib/settings'
 import { sendBroadcastTemplate, type BroadcastSendInput } from '@/lib/broadcasts'
+import { firstName } from '@/lib/names'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // Hobby ceiling; the batch loop below stays under it.
@@ -55,13 +56,12 @@ function sleep(ms: number) {
 }
 
 // Derive a safe first name from a patient's full_name for the {{first_name}}
-// token. Meta rejects an empty {{1}}, so fall back to a neutral greeting. Strip
-// newlines/tabs and collapse whitespace — WhatsApp template body params reject
-// them (same hazard as formatPrescriptions in lib/whatsapp.ts).
+// token, via the shared helper (strips titles + Title-cases: "CHIEF AGU" →
+// "Agu"). Meta rejects an empty {{1}}, so fall back to a neutral greeting.
+// firstName() already trims/collapses internal whitespace, so a stored name
+// with stray newlines/tabs still yields a clean single-token param.
 function firstNameFrom(fullName: string | null | undefined): string {
-  const cleaned = (fullName ?? '').replace(/[\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
-  const first = cleaned.split(' ')[0] ?? ''
-  return first || 'there'
+  return firstName(fullName) || 'there'
 }
 
 // Replace supported personalisation tokens in each body param with THIS

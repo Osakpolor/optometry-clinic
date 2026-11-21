@@ -5,6 +5,7 @@ import NewVisitForm from '@/components/NewVisitForm'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getUserRole, canManageVisits } from '@/lib/auth/roles'
+import { toTitleCase } from '@/lib/names'
 
 export default async function NewVisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -87,7 +88,7 @@ export default async function NewVisitPage({ params }: { params: Promise<{ id: s
         href={`/dashboard/patients/${id}`}
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
       >
-        ← Back to {patient?.full_name}
+        ← Back to {toTitleCase(patient?.full_name)}
       </Link>
 
       {/* Page header — file number above, bold name as primary heading */}
@@ -97,7 +98,7 @@ export default async function NewVisitPage({ params }: { params: Promise<{ id: s
         </h3>
       )}
       <h1 className="text-2xl font-semibold mb-6">
-        New visit — {patient?.full_name}
+        New visit — {toTitleCase(patient?.full_name)}
       </h1>
 
       <NewVisitForm patientId={id} doctorId={user.id} initialAge={initialAge} />

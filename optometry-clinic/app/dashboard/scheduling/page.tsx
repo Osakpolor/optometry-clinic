@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getUserRole, canManageAppointments } from '@/lib/auth/roles'
 import { clinicDay, clinicToday, OCCUPANCY_EXCLUDED_STATUSES } from '@/lib/scheduling-config'
 import SchedulingHub from '@/components/scheduling/SchedulingHub'
+import { toTitleCase } from '@/lib/names'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,7 +55,7 @@ export default async function SchedulingPage({
   const pendingRequests = (pendingRaw ?? []).map(r => ({
     id: r.id,
     patientId: r.patient_id,
-    patientName: r.patient_name,
+    patientName: toTitleCase(r.patient_name),
     phone: r.phone_number,
     requestedDate: r.requested_date,
     requestedTime: r.requested_time,
@@ -86,7 +87,7 @@ export default async function SchedulingPage({
   const calendarAppointments = (calRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
-    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
+    patientName: toTitleCase(embed<{ full_name: string | null }>(a.patients)?.full_name) || 'Unknown patient',
     date: a.appointment_date,
     serviceType: a.service_type,
     status: a.status,
@@ -114,7 +115,7 @@ export default async function SchedulingPage({
   const todayAppointments = (todayRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
-    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
+    patientName: toTitleCase(embed<{ full_name: string | null }>(a.patients)?.full_name) || 'Unknown patient',
     date: a.appointment_date,
     serviceType: a.service_type,
     status: a.status,
@@ -147,7 +148,7 @@ export default async function SchedulingPage({
   const upcomingAppointments = (listRaw ?? []).map(a => ({
     id: a.id,
     patientId: a.patient_id,
-    patientName: embed<{ full_name: string | null }>(a.patients)?.full_name ?? 'Unknown patient',
+    patientName: toTitleCase(embed<{ full_name: string | null }>(a.patients)?.full_name) || 'Unknown patient',
     date: a.appointment_date,
     serviceType: a.service_type,
     status: a.status,

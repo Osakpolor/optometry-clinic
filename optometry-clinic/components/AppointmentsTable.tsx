@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
+import { toTitleCase } from '@/lib/names'
 
 
 const STATUSES = ['booked', 'confirmed', 'completed', 'no_show', 'cancelled']
@@ -41,7 +42,7 @@ export default function AppointmentsTable({ appointments }: { appointments: any[
 >
   <div className="flex items-start justify-between gap-2">
     <div>
-      <p className="text-sm font-medium">{appt.patients?.full_name}</p>
+      <p className="text-sm font-medium">{toTitleCase(appt.patients?.full_name)}</p>
       <p className="text-xs text-muted-foreground">{appt.patients?.phone}</p>
       <p className="text-xs text-muted-foreground">{appt.service_type}</p>
       <p className="text-xs text-muted-foreground">
@@ -84,7 +85,7 @@ export default function AppointmentsTable({ appointments }: { appointments: any[
               className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors"
               onClick={() => router.push(`/dashboard/patients/${appt.patient_id}`)}
             >
-              <td className="py-2.5 pr-4 font-medium">{appt.patients?.full_name}</td>
+              <td className="py-2.5 pr-4 font-medium">{toTitleCase(appt.patients?.full_name)}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">{appt.patients?.phone}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">{appt.service_type}</td>
               <td className="py-2.5 pr-4 text-muted-foreground">

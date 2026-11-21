@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { updateStaffRole, toggleStaffActive } from '@/app/actions/staffActions'
 import { useRouter } from 'next/navigation'
 import { DeleteStaffButton } from '@/components/staff/DeleteStaffButton'
+import { toTitleCase } from '@/lib/names'
 
 type StaffMember = {
   id: string
@@ -57,7 +58,7 @@ function StaffRow({
         toast.error(result.error)
         setSelectedRole(member.role)
       } else {
-        toast.success(`${member.full_name}'s role updated to ${ROLE_LABELS[selectedRole]}.`)
+        toast.success(`${toTitleCase(member.full_name)}'s role updated to ${ROLE_LABELS[selectedRole]}.`)
         router.refresh()
       }
       setEditingRole(false)
@@ -72,8 +73,8 @@ function StaffRow({
       } else {
         toast.success(
           member.is_active
-            ? `${member.full_name} has been deactivated.`
-            : `${member.full_name} has been reactivated.`
+            ? `${toTitleCase(member.full_name)} has been deactivated.`
+            : `${toTitleCase(member.full_name)} has been reactivated.`
         )
         router.refresh()
       }
@@ -90,7 +91,7 @@ function StaffRow({
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-gray-900">
-            {member.full_name}
+            {toTitleCase(member.full_name)}
           </span>
           {isSelf && (
             <span className="text-xs text-muted-foreground">(you)</span>
@@ -183,7 +184,7 @@ function StaffRow({
         {/* Delete — admin-only (this whole list is admin-only), blocked
             server-side if the member has recorded clinical visits */}
         {!isSelf && (
-          <DeleteStaffButton staffId={member.id} staffName={member.full_name} />
+          <DeleteStaffButton staffId={member.id} staffName={toTitleCase(member.full_name)} />
         )}
       </div>
     </div>

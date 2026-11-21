@@ -5,6 +5,7 @@
 import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { getSettings, isAllowedRecipient } from '@/lib/settings'
+import { firstName } from '@/lib/names'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`
@@ -119,8 +120,10 @@ export async function sendBookingConfirmation({
   }
 
   const details = [service, date, time].filter(Boolean).join(', ')
+  // Greet by first name only ("Hello Peace", not "Hello Chief Agu Jones").
+  const greetName = firstName(fullName) || fullName
   const message =
-    `Hello ${fullName}, thank you for booking with Olu Eye Clinic! ` +
+    `Hello ${greetName}, thank you for booking with Olu Eye Clinic! ` +
     (details ? `Your appointment details: ${details}. ` : '') +
     `A member of our team will contact you shortly to confirm. ` +
     `For enquiries call 09166015438. - OluEyeClnc`
@@ -150,8 +153,9 @@ export async function sendAppointmentReminder({
 }): Promise<{ success: boolean; error?: string }> {
   const when = time ? `${date} at ${time}` : date
   const urgency = isToday ? 'TODAY ' : ''
+  const greetName = firstName(fullName) || fullName
   const message =
-    `Dear ${fullName}, this is a ${urgency}reminder that your eye check-up at ` +
+    `Dear ${greetName}, this is a ${urgency}reminder that your eye check-up at ` +
     `Olu Eye Clinic is scheduled for ${when}. ` +
     `Please arrive 10 minutes early. To reschedule call 09166015438. - OluEyeClnc`
   return sendWhatsAppMessage(to, message)
@@ -188,6 +192,10 @@ export async function sendAppointmentReminderTemplate({
     return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
   }
 
+  // Greet by first name only (strip titles). Fall back to the full name so a
+  // template body param {{1}} is never empty (Meta rejects an empty param).
+  const greetName = firstName(patientName) || patientName
+
   const body = {
     messaging_product: 'whatsapp',
     to,
@@ -199,7 +207,7 @@ export async function sendAppointmentReminderTemplate({
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: patientName },
+            { type: 'text', text: greetName },
             { type: 'text', text: appointmentDate },
           ],
         },
@@ -226,7 +234,7 @@ export async function sendAppointmentReminderTemplate({
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `Hello ${patientName}, I'm Iris, Olu Eye Clinic's AI assistant. ` +
+      `Hello ${greetName}, I'm Iris, Olu Eye Clinic's AI assistant. ` +
       `Thank you for trusting us with your eye health. ` +
       `This is a friendly reminder of your next appointment on ${appointmentDate}. ` +
       `We look forward to seeing you. Enjoy the rest of your day!`
@@ -290,6 +298,10 @@ export async function sendVisitThankYou({
     ? formatLongDate(followUpDate)
     : 'to be scheduled — please contact the clinic'
 
+  // Greet by first name only (strip titles); fall back to full name so {{1}}
+  // is never an empty template param.
+  const greetName = firstName(patientName) || patientName
+
   const body = {
     messaging_product: 'whatsapp',
     to,
@@ -301,7 +313,7 @@ export async function sendVisitThankYou({
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: patientName },
+            { type: 'text', text: greetName },
             { type: 'text', text: appointmentText },
           ],
         },
@@ -329,7 +341,7 @@ export async function sendVisitThankYou({
     await logWhatsAppMessage(
       patientPhone,
       'system',
-      `Dear ${patientName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
+      `Dear ${greetName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
       `*Your next appointment is ${appointmentText}*\n\n` +
       `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`
     )
@@ -384,6 +396,10 @@ export async function sendVisitSummaryWhatsApp({
   const diagnosisText = diagnosis?.trim() || 'See clinic notes'
   const reviewLink = process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
 
+  // Greet by first name only (strip titles); fall back to full name so {{1}}
+  // is never an empty template param.
+  const greetName = firstName(patientName) || patientName
+
   const body = {
     messaging_product: 'whatsapp',
     to,
@@ -395,7 +411,7 @@ export async function sendVisitSummaryWhatsApp({
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: patientName },
+            { type: 'text', text: greetName },
             { type: 'text', text: diagnosisText },
             { type: 'text', text: prescriptionText },
             { type: 'text', text: appointmentText },
@@ -429,7 +445,7 @@ export async function sendVisitSummaryWhatsApp({
       patientPhone,
       'system',
       `*Olu Eye Clinic — Visit Summary*\n\n` +
-      `Dear ${patientName}, you are diagnosed of ${diagnosisText}.\n` +
+      `Dear ${greetName}, you are diagnosed of ${diagnosisText}.\n` +
       `Please, endeavour to keep to your treatment regimen religiously.\n\n` +
       `*Treatment Regimen:*\n${prescriptionText}\n\n` +
       `*Next Appointment:* ${appointmentText}\n\n` +

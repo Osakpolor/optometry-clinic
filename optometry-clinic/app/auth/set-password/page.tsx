@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { toTitleCase } from '@/lib/names'
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -33,7 +34,7 @@ export default function SetPasswordPage() {
         .single()
 
       if (profile?.full_name) {
-        setUserName(profile.full_name)
+        setUserName(toTitleCase(profile.full_name))
       }
 
       // Always show the set-password form — never redirect to dashboard

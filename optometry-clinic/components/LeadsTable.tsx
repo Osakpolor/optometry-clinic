@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { toTitleCase } from '@/lib/names'
 
 type Lead = {
   id: string
@@ -47,7 +48,7 @@ export default function LeadsTable({ leads }: { leads: Lead[] }) {
       {leads.map(lead => (
         <div key={lead.id} className="py-3 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-sm font-medium">{lead.full_name}</span>
+            <span className="text-sm font-medium">{toTitleCase(lead.full_name)}</span>
             <span className="text-xs text-muted-foreground">{lead.phone}{lead.email ? ` · ${lead.email}` : ''}</span>
             {lead.service_interest && (
               <span className="text-xs text-muted-foreground">{lead.service_interest}</span>

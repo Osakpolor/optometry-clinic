@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { toTitleCase } from '@/lib/names'
 
 type Patient = {
   id: string
@@ -126,7 +127,7 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
                        -mx-1 px-1 rounded cursor-pointer"
           >
             <div>
-              <p className="text-sm font-medium">{p.full_name}</p>
+              <p className="text-sm font-medium">{toTitleCase(p.full_name)}</p>
               <p className="text-xs text-muted-foreground">
                 {p.phone ?? '—'} {p.sex ? `· ${p.sex}` : ''}
               </p>
@@ -186,7 +187,7 @@ export default function PatientsTable({ patients }: { patients: Patient[] }) {
               <td className="py-3 pr-6 text-muted-foreground text-xs font-mono w-28">
                 {patientRef(p)}
               </td>
-              <td className="py-3 pr-6 font-medium">{p.full_name}</td>
+              <td className="py-3 pr-6 font-medium">{toTitleCase(p.full_name)}</td>
               <td className="py-3 pr-16 text-muted-foreground w-28">
                 {p.sex ?? '—'}
               </td>

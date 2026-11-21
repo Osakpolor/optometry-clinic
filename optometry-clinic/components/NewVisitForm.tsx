@@ -501,7 +501,7 @@ export default function NewVisitForm({ patientId, doctorId, initialAge = '' }: {
     if (visitId) {
       try {
         const waResult = await sendVisitWhatsApp(patientId, visitId)
-        if (!waResult.success) {
+        if (!waResult.success && !waResult.alreadySent) {
           console.warn('WhatsApp send skipped:', waResult.error)
         }
       } catch (err) {

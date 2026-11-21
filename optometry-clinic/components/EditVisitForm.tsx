@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
 import { PastVisitsPanel } from '@/components/visits/PastVisitsPanel'
+import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
@@ -277,6 +278,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
   const [notes, setNotes] = useState(visit.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  // Hard double-submit guard: refs update synchronously, so a rapid second
+  // click is rejected before React re-renders the disabled button.
+  const isSubmittingRef = useRef(false)
 
   // ── Unsaved changes guard ──
   // Snapshot all current field values into one object and compare against
@@ -314,6 +318,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
 
   async function handleSubmit(ev: FormEvent) {
     ev.preventDefault()
+    // Reject re-entry (rapid re-clicks) before the button's disabled state paints.
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
     setSaving(true)
     setErrorMsg('')
 
@@ -390,8 +397,12 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       updated_at: new Date().toISOString(),
     }).eq('id', visitId)
 
-    setSaving(false)
-    if (error) { setErrorMsg(error.message); return }
+    if (error) {
+      setErrorMsg(error.message)
+      setSaving(false)
+      isSubmittingRef.current = false
+      return
+    }
 
     if (nextAppointment) {
       await supabase.from('appointments').upsert({
@@ -405,10 +416,28 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       })
     }
 
+    // Send the post-visit thank-you through the shared action, AWAITED — exactly
+    // like the new-visit save. A router.push issued while a Server Action is still
+    // pending is dropped by Next's transition queue, which is why the earlier
+    // fire-and-forget version left the edit sheet stuck. Awaiting lets the action
+    // settle first; the once-only dedup makes it safe, and the button stays
+    // disabled ("Saving…") so it can't be re-clicked while the send runs.
+    try {
+      const waResult = await sendVisitWhatsApp(patientId, visitId)
+      if (!waResult.success && !waResult.alreadySent) {
+        console.warn('Thank-you not sent on edit:', waResult.error)
+      }
+    } catch (err) {
+      console.error('Thank-you send failed on edit:', err)
+    }
+
+    // Show success and navigate back to the visit record, like the new-visit save.
     setSavedOk(true)
     guard.allowNextNavigation()
-    router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
-    router.refresh()
+    setTimeout(() => {
+      router.push(`/dashboard/patients/${patientId}/visits/${visitId}`)
+      router.refresh()
+    }, 900)
   }
 
   return (
@@ -654,8 +683,12 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       <SectionHeader title="Notes" />
       <YellowTextarea label="" value={notes} onChange={setNotes} rows={4} />
 
-      <button type="submit" disabled={saving} className="mt-4 rounded bg-black px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">
-        {saving ? 'Saving...' : 'Save changes'}
+      <button
+        type="submit"
+        disabled={saving || savedOk}
+        className={`mt-4 rounded px-6 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-70 ${savedOk ? 'bg-green-600' : 'bg-black'}`}
+      >
+        {savedOk ? '✓ Saved' : saving ? 'Saving...' : 'Save changes'}
       </button>
       {errorMsg && <p className="mt-2 text-sm text-red-600">{errorMsg}</p>}
     </form>

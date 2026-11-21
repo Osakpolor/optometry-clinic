@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUnsavedChanges } from '@/lib/hooks/useUnsavedChanges'
 import { UnsavedChangesModal } from '@/components/UnsavedChangesModal'
 import { PastVisitsPanel } from '@/components/visits/PastVisitsPanel'
+import { sendVisitWhatsApp } from '@/app/actions/sendVisitWhatsApp'
 
 const CHARTS = ['Snellen', 'Illiterate E', 'Landot C', 'Children Chart', 'LogMAR']
 const VA_TYPES = ['Analog', 'Digital']
@@ -327,6 +328,12 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       duration: d.duration || null,
     }))
 
+    // Did the appointment date change on this edit? If so, clear the stale
+    // thank-you stamp so the once-only guard lets a genuinely new/changed future
+    // date fire again. (thankyou_sent_at means "sent for the CURRENT date".)
+    const originalFollowUp = (visit.follow_up_date ?? '').slice(0, 10)
+    const dateChanged = (nextAppointment || '') !== originalFollowUp
+
     const { error } = await supabase.from('visit_records').update({
       medical_history: medicalHistory || null,
       reason_for_visit: reasonForVisit || null,
@@ -388,6 +395,9 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       notes: notes || null,
       updated_by: user?.id ?? null,
       updated_at: new Date().toISOString(),
+      // Reset the once-only marker when the date changes (undefined is dropped
+      // from the payload, so an unchanged date leaves the stamp intact).
+      thankyou_sent_at: dateChanged ? null : undefined,
     }).eq('id', visitId)
 
     setSaving(false)
@@ -403,6 +413,19 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
         onConflict: 'patient_id,appointment_date',
         ignoreDuplicates: true,
       })
+    }
+
+    // Fire the post-visit thank-you through the shared action — same guards as
+    // the new-visit save, plus the once-only dedup. Awaited so it completes
+    // before we navigate; the visit is already saved, so a WhatsApp failure
+    // never risks the clinical record.
+    try {
+      const waResult = await sendVisitWhatsApp(patientId, visitId)
+      if (!waResult.success && !waResult.alreadySent) {
+        console.warn('Thank-you not sent on edit:', waResult.error)
+      }
+    } catch (err) {
+      console.error('Thank-you send failed on edit:', err)
     }
 
     setSavedOk(true)

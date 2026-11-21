@@ -416,17 +416,22 @@ export default function EditVisitForm({ patientId, visitId, visit }: { patientId
       })
     }
 
-    // Fire the post-visit thank-you through the shared action — FIRE-AND-FORGET
-    // so it never blocks the success confirmation or navigation (a slow/hanging
-    // WhatsApp call must not make the save look stuck). The visit is already
-    // saved, and the once-only dedup lives server-side, so firing once here is
-    // safe. The server decides whether to actually send.
-    void sendVisitWhatsApp(patientId, visitId).catch((err) =>
+    // Send the post-visit thank-you through the shared action, AWAITED — exactly
+    // like the new-visit save. A router.push issued while a Server Action is still
+    // pending is dropped by Next's transition queue, which is why the earlier
+    // fire-and-forget version left the edit sheet stuck. Awaiting lets the action
+    // settle first; the once-only dedup makes it safe, and the button stays
+    // disabled ("Saving…") so it can't be re-clicked while the send runs.
+    try {
+      const waResult = await sendVisitWhatsApp(patientId, visitId)
+      if (!waResult.success && !waResult.alreadySent) {
+        console.warn('Thank-you not sent on edit:', waResult.error)
+      }
+    } catch (err) {
       console.error('Thank-you send failed on edit:', err)
-    )
+    }
 
-    // Show success and navigate exactly like the new-visit save. Keep the button
-    // disabled (saving || savedOk) the whole time so it can't be re-clicked.
+    // Show success and navigate back to the visit record, like the new-visit save.
     setSavedOk(true)
     guard.allowNextNavigation()
     setTimeout(() => {

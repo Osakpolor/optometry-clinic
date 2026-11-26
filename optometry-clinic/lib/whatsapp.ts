@@ -1,11 +1,22 @@
 // lib/whatsapp.ts
 // WhatsApp Cloud API utility functions.
 // All sending goes through the clinic's registered number.
+//
+// MESSAGE TRACKING (feature/message-health, Phase A):
+//   Every function here that actually calls the Graph API records the send in
+//   message_log via logMessageSend() — 'accepted' + Meta's message id on
+//   success, 'failed' + Meta's error on an API error. The webhook later
+//   upgrades that row from delivery receipts (sent/delivered/read/failed).
+//   Logging is fire-and-forget and can never block or break a send.
+//   A send SKIPPED by a messaging-control gate (automated-sends-off /
+//   test-mode) makes no API call, so it is deliberately NOT logged.
+//   Broadcasts are tracked separately (broadcast_recipients), not here.
 
 import { humanizePrescriptionList } from '@/lib/humanizePrescription'
 import { createClient as createSbClient } from '@supabase/supabase-js'
 import { getSettings, isAllowedRecipient } from '@/lib/settings'
 import { firstName, greetingName } from '@/lib/names'
+import { logMessageSend, type MessageKind } from '@/lib/message-log'
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID!
 const ACCESS_TOKEN = process.env.WHATSAPP_TOKEN!
 const API_URL = `https://graph.facebook.com/v23.0/${PHONE_NUMBER_ID}/messages`
@@ -18,6 +29,21 @@ export function formatNigerianPhone(phone: string): string | null {
   if (digits.startsWith('0') && digits.length === 11) return '234' + digits.slice(1)
   if (digits.length === 10) return '234' + digits
   return null
+}
+
+// Pull Meta's error fields out of a Graph API error response, in the shape
+// message_log stores. error_data.details is Meta's most specific line.
+function metaErrorFields(data: any): {
+  errorCode: number | null
+  errorTitle: string | null
+  errorDetails: string | null
+} {
+  const e = data?.error
+  return {
+    errorCode: e?.code ?? null,
+    errorTitle: e?.title ?? e?.message ?? null,
+    errorDetails: e?.error_data?.details ?? null,
+  }
 }
 
 export function formatPrescriptions(medications: any[]): string {
@@ -44,10 +70,14 @@ export function formatPrescriptions(medications: any[]): string {
 // the patient receives on WhatsApp (line breaks included; the viewer renders
 // them with whitespace-pre-wrap). Own service-role client so it works in
 // server actions AND the cron. Fire-and-forget: never blocks a real send.
+//
+// waMessageId (optional) ties this thread line to its delivery receipt in
+// message_log, so the inbox can show Sent / Delivered / Read / Failed under it.
 export async function logWhatsAppMessage(
   phone: string,
   role: 'user' | 'assistant' | 'system',
-  message: string
+  message: string,
+  waMessageId?: string | null
 ): Promise<void> {
   try {
     const to = formatNigerianPhone(phone) ?? phone.replace(/\D/g, '')
@@ -59,6 +89,7 @@ export async function logWhatsAppMessage(
       phone_number: to,
       role,
       message,
+      wa_message_id: waMessageId ?? null,
     })
   } catch (err) {
     console.error('logWhatsAppMessage failed (non-blocking):', err)
@@ -66,11 +97,25 @@ export async function logWhatsAppMessage(
 }
 
 // ── Core send function ────────────────────────────────────────────────────────
-
+//
+// logCtx controls message_log recording:
+//   • omit it  → the send is logged with kind 'other' (plain free-form text);
+//   • pass kind/patientId → logged with that classification;
+//   • pass skipLog:true → the caller will log the send itself with a more
+//     specific kind (e.g. a template wrapper), so the core skips it to avoid
+//     a duplicate row.
+// Returns Meta's wa_message_id so callers can tie the send to its receipts.
 export async function sendWhatsAppMessage(
   to: string,
-  message: string
-): Promise<{ success: boolean; error?: string }> {
+  message: string,
+  logCtx?: {
+    kind?: MessageKind
+    templateName?: string | null
+    patientId?: string | null
+    skipLog?: boolean
+  }
+): Promise<{ success: boolean; error?: string; waMessageId?: string | null }> {
+  const shouldLog = !logCtx?.skipLog
   try {
     const response = await fetch(API_URL, {
       method: 'POST',
@@ -88,11 +133,41 @@ export async function sendWhatsAppMessage(
     const data = await response.json()
     if (!response.ok || data.error) {
       console.error('WhatsApp sendWhatsAppMessage error:', data.error ?? data)
+      if (shouldLog) {
+        await logMessageSend({
+          phone: to,
+          kind: logCtx?.kind ?? 'other',
+          templateName: logCtx?.templateName ?? null,
+          patientId: logCtx?.patientId ?? null,
+          outcome: { ok: false, ...metaErrorFields(data) },
+        })
+      }
       return { success: false, error: data.error?.message ?? 'API error' }
     }
-    return { success: true }
+    const waMessageId: string | null = data?.messages?.[0]?.id ?? null
+    if (shouldLog) {
+      await logMessageSend({
+        phone: to,
+        kind: logCtx?.kind ?? 'other',
+        templateName: logCtx?.templateName ?? null,
+        patientId: logCtx?.patientId ?? null,
+        outcome: { ok: true, waMessageId },
+      })
+    }
+    return { success: true, waMessageId }
   } catch (err: any) {
     console.error('sendWhatsAppMessage network error:', err)
+    // A network error has no Meta response/code — record it as failed so a
+    // total outage is still visible in message_log rather than vanishing.
+    if (shouldLog) {
+      await logMessageSend({
+        phone: to,
+        kind: logCtx?.kind ?? 'other',
+        templateName: logCtx?.templateName ?? null,
+        patientId: logCtx?.patientId ?? null,
+        outcome: { ok: false, errorCode: null, errorTitle: 'Network error', errorDetails: err?.message ?? null },
+      })
+    }
     return { success: false, error: err.message }
   }
 }
@@ -128,15 +203,19 @@ export async function sendBookingConfirmation({
     `A member of our team will contact you shortly to confirm. ` +
     `For enquiries call 09166015438. - OluEyeClnc`
 
-  const result = await sendWhatsAppMessage(to, message)
+  // Let the core send record message_log with kind 'booking'.
+  const result = await sendWhatsAppMessage(to, message, { kind: 'booking' })
   if (result.success) {
-    // Log exactly what the patient received
-    await logWhatsAppMessage(to, 'system', message)
+    // Log exactly what the patient received, tagged with the message id.
+    await logWhatsAppMessage(to, 'system', message, result.waMessageId ?? null)
   }
   return result
 }
 
 // ── Appointment reminder (free-form, legacy — kept for compatibility) ─────────
+// NOTE: currently unused and slated for removal in a separate deletion PR, so
+// it is left uninstrumented. It still routes through sendWhatsAppMessage, which
+// would log any call it does make as kind 'other' — nothing escapes tracking.
 
 export async function sendAppointmentReminder({
   to,
@@ -231,8 +310,21 @@ export async function sendAppointmentReminderTemplate({
     const data = await response.json()
     if (!response.ok || data.error) {
       console.error('sendAppointmentReminderTemplate error:', data.error ?? data)
+      await logMessageSend({
+        phone: patientPhone,
+        kind: 'reminder',
+        templateName: 'olu_reminder_iris',
+        outcome: { ok: false, ...metaErrorFields(data) },
+      })
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    const waMessageId: string | null = data?.messages?.[0]?.id ?? null
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'reminder',
+      templateName: 'olu_reminder_iris',
+      outcome: { ok: true, waMessageId },
+    })
     // Log the full human-readable message exactly as the olu_reminder_iris
     // template renders it on the patient's phone.
     await logWhatsAppMessage(
@@ -241,11 +333,18 @@ export async function sendAppointmentReminderTemplate({
       `Hello ${greetName}, I'm Iris, Olu Eye Clinic's AI assistant. ` +
       `Thank you for trusting us with your eye health. ` +
       `This is a friendly reminder of your next appointment on ${appointmentDate}. ` +
-      `We look forward to seeing you. Enjoy the rest of your day!`
+      `We look forward to seeing you. Enjoy the rest of your day!`,
+      waMessageId
     )
     return { success: true }
   } catch (err: any) {
     console.error('sendAppointmentReminderTemplate network error:', err)
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'reminder',
+      templateName: 'olu_reminder_iris',
+      outcome: { ok: false, errorCode: null, errorTitle: 'Network error', errorDetails: err?.message ?? null },
+    })
     return { success: false, error: err.message ?? 'Network error' }
   }
 }
@@ -338,8 +437,21 @@ export async function sendVisitThankYou({
     const data = await response.json()
     if (!response.ok || data.error) {
       console.error('sendVisitThankYou error:', data.error ?? data)
+      await logMessageSend({
+        phone: patientPhone,
+        kind: 'thankyou',
+        templateName: 'olu_visit_thankyou_v4',
+        outcome: { ok: false, ...metaErrorFields(data) },
+      })
       return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
+    const waMessageId: string | null = data?.messages?.[0]?.id ?? null
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'thankyou',
+      templateName: 'olu_visit_thankyou_v4',
+      outcome: { ok: true, waMessageId },
+    })
     // Log the full human-readable message exactly as the olu_visit_thankyou_v4
     // template renders it on the patient's phone (newlines are fine here — this
     // is our own DB, not a template param).
@@ -348,11 +460,18 @@ export async function sendVisitThankYou({
       'system',
       `Dear ${greetName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
       `*Your next appointment is ${appointmentText}*\n\n` +
-      `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`
+      `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`,
+      waMessageId
     )
     return { success: true }
   } catch (err: any) {
     console.error('sendVisitThankYou network error:', err)
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'thankyou',
+      templateName: 'olu_visit_thankyou_v4',
+      outcome: { ok: false, errorCode: null, errorTitle: 'Network error', errorDetails: err?.message ?? null },
+    })
     return { success: false, error: err.message ?? 'Network error' }
   }
 }
@@ -443,8 +562,21 @@ export async function sendVisitSummaryWhatsApp({
 
     if (!response.ok || data.error) {
       console.error('WhatsApp sendVisitSummaryWhatsApp error:', data.error ?? data)
+      await logMessageSend({
+        phone: patientPhone,
+        kind: 'summary',
+        templateName: 'olu_eye_clinic_visit_summary_v2',
+        outcome: { ok: false, ...metaErrorFields(data) },
+      })
       return { success: false, error: data.error?.message ?? 'WhatsApp API request failed' }
     }
+    const waMessageId: string | null = data?.messages?.[0]?.id ?? null
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'summary',
+      templateName: 'olu_eye_clinic_visit_summary_v2',
+      outcome: { ok: true, waMessageId },
+    })
     // Log the full human-readable message exactly as the visit-summary template
     // renders it on the patient's phone.
     await logWhatsAppMessage(
@@ -457,11 +589,18 @@ export async function sendVisitSummaryWhatsApp({
       `*Next Appointment:* ${appointmentText}\n\n` +
       `Thanks for choosing OLU EYE CLINIC.\n\n` +
       `We'd love to hear about your experience! Please leave us a review: ${reviewLink}\n\n` +
-      `God bless you. - Olu Eye Clinic Team`
+      `God bless you. - Olu Eye Clinic Team`,
+      waMessageId
     )
     return { success: true }
   } catch (err: any) {
     console.error('sendVisitSummaryWhatsApp network error:', err)
+    await logMessageSend({
+      phone: patientPhone,
+      kind: 'summary',
+      templateName: 'olu_eye_clinic_visit_summary_v2',
+      outcome: { ok: false, errorCode: null, errorTitle: 'Network error', errorDetails: err?.message ?? null },
+    })
     return { success: false, error: err.message ?? 'Network error' }
   }
 }

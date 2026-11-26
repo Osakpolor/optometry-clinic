@@ -139,7 +139,7 @@ export async function getConversationMessages(phoneNumber: string): Promise<Thre
   const [msgsRes, pendingRes, controlRes] = await Promise.all([
     supabase
       .from('whatsapp_conversations')
-      .select('id, role, message, created_at')
+      .select('id, role, message, created_at, wa_message_id')
       .eq('phone_number', phoneNumber)
       .order('created_at', { ascending: true })
       .limit(500),
@@ -160,6 +160,35 @@ export async function getConversationMessages(phoneNumber: string): Promise<Thre
   }
 
   const data = msgsRes.data ?? []
+
+  // Attach delivery status to each outgoing line, by joining message_log on
+  // wa_message_id. Read via the service-role client so receptionists/doctors
+  // (who have no admin RLS read on message_log) still see the status. Older
+  // lines with no wa_message_id, and inbound patient messages, get nothing.
+  const waIds = data.map(m => m.wa_message_id).filter(Boolean) as string[]
+  const statusByWaId = new Map<string, { status: string; error: string | null }>()
+  if (waIds.length > 0) {
+    const { data: logs } = await admin()
+      .from('message_log')
+      .select('wa_message_id, status, error_title, error_details, error_code')
+      .in('wa_message_id', waIds)
+    for (const l of logs ?? []) {
+      const error =
+        l.error_title ||
+        l.error_details ||
+        (l.error_code != null ? `Error ${l.error_code}` : null)
+      statusByWaId.set(l.wa_message_id as string, { status: l.status as string, error })
+    }
+  }
+  const messages = data.map(m => {
+    const log = m.wa_message_id ? statusByWaId.get(m.wa_message_id) : null
+    return {
+      ...m,
+      delivery_status: log?.status ?? null,
+      delivery_error: log?.error ?? null,
+    }
+  })
+
   let lastInbound = pendingRes.data?.last_message_at ?? null
   if (!lastInbound) {
     const lastUser = data.filter(m => m.role === 'user').slice(-1)[0]
@@ -168,7 +197,7 @@ export async function getConversationMessages(phoneNumber: string): Promise<Thre
   const windowOpen = lastInbound != null && Date.now() - new Date(lastInbound).getTime() < WINDOW_MS
 
   return {
-    messages: data,
+    messages,
     windowOpen,
     humanControlled: controlRes.data?.human_controlled ?? false,
     controlledBy: controlRes.data?.controlled_by ?? null,

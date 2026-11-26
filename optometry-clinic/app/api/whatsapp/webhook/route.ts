@@ -44,6 +44,29 @@ const STATUS_RANK: Record<string, number> = {
   queued: 0, skipped: 0, sent: 1, failed: 2, capped: 2, delivered: 2, read: 3,
 }
 
+// Log EVERY incoming delivery-status receipt (broadcast or not — reminders,
+// Iris, templates, all of them). Diagnostic only: no database writes, and this
+// never alters routing. One line per receipt, prefixed WA_STATUS, so failures
+// (e.g. 131049 marketing cap, 24h-window drops) are greppable in Vercel logs.
+function logIncomingStatuses(statuses: any[]): void {
+  for (const s of statuses) {
+    const base =
+      `WA_STATUS id=${s?.id} recipient_id=${s?.recipient_id} ` +
+      `status=${s?.status} timestamp=${s?.timestamp}`
+    const errors = Array.isArray(s?.errors) ? s.errors : []
+    if (errors.length === 0) {
+      console.log(base)
+      continue
+    }
+    for (const err of errors) {
+      console.log(
+        `${base} error_code=${err?.code} error_title=${err?.title} ` +
+        `error_details=${err?.error_data?.details}`
+      )
+    }
+  }
+}
+
 // Apply Meta delivery-status receipts to broadcast_recipients, then roll the
 // fresh counts up to each affected broadcast. Receipts for non-broadcast sends
 // (reminders, Iris) simply match no row and are ignored.
@@ -137,6 +160,8 @@ export async function POST(req: NextRequest) {
     // matching broadcast_recipients row(s) and return — before the messages
     // guard below, which would otherwise drop status-only payloads.
     if (Array.isArray(statuses) && statuses.length > 0) {
+      // Log all receipts first (diagnostic), independent of broadcast matching.
+      logIncomingStatuses(statuses)
       try {
         await applyBroadcastStatuses(statuses)
       } catch (e) {

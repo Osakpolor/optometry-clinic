@@ -58,6 +58,7 @@ export async function logMessageSend(params: {
   kind: MessageKind
   templateName?: string | null
   patientId?: string | null
+  visitId?: string | null
   outcome: SendOutcome
 }): Promise<void> {
   try {
@@ -70,6 +71,10 @@ export async function logMessageSend(params: {
       kind: params.kind,
       template_name: params.templateName ?? null,
       patient_id: params.patientId ?? null,
+      // Visit this send belongs to (thank-yous). Lets the webhook rebuild a
+      // utility thank-you from the appointment date if the review template is
+      // capped (131049) after acceptance. Null for sends with no visit context.
+      visit_id: params.visitId ?? null,
       status: params.outcome.ok ? 'accepted' : 'failed',
       wa_message_id: params.outcome.ok ? params.outcome.waMessageId : null,
       error_code: params.outcome.ok ? null : params.outcome.errorCode,

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { sendWhatsAppMessage } from '@/lib/whatsapp'
+import { sendWhatsAppMessage, sendVisitThankYou } from '@/lib/whatsapp'
 import { generateClaudeReply } from '@/lib/claude-whatsapp'
 import { getPhoneVariants } from '@/lib/phone-utils'
+import { getSettings } from '@/lib/settings'
 
 // Marketing opt-out detection. Button titles are controlled values, so a
 // substring match is safe there (and survives renaming "Stop promotions" →
@@ -157,7 +158,7 @@ async function applyMessageLogStatuses(statuses: any[]): Promise<void> {
 
     const { data: rows } = await admin
       .from('message_log')
-      .select('id, status')
+      .select('id, status, kind, template_name, patient_id, visit_id')
       .eq('wa_message_id', waId)
       .limit(1)
     const rec = rows?.[0]
@@ -165,11 +166,13 @@ async function applyMessageLogStatuses(statuses: any[]): Promise<void> {
     if (rec.status === 'failed') continue // terminal
 
     const update: Record<string, any> = { status_updated_at: new Date().toISOString() }
+    let failureCode: number | null = null
 
     if (incoming === 'failed') {
       // Don't fail a message that already reached the handset.
       if ((MSG_LOG_RANK[rec.status] ?? 0) >= MSG_LOG_RANK.delivered) continue
       const err = Array.isArray(s.errors) ? s.errors[0] : undefined
+      failureCode = err?.code ?? null
       update.status = 'failed'
       update.error_code = err?.code ?? null
       update.error_title = err?.title ?? null
@@ -181,6 +184,94 @@ async function applyMessageLogStatuses(statuses: any[]): Promise<void> {
     }
 
     await admin.from('message_log').update(update).eq('id', rec.id)
+
+    // Review template (v5, MARKETING) was ACCEPTED, then capped at delivery
+    // (131049). Rebuild a utility (v4) thank-you so the patient still gets their
+    // next-appointment message. The v5 row is now terminal-failed, so a repeat
+    // 131049 receipt bails at the `rec.status === 'failed'` guard above — this
+    // fires at most once per message.
+    if (
+      failureCode === 131049 &&
+      rec.kind === 'thankyou' &&
+      rec.template_name === 'olu_visit_thankyou_v5'
+    ) {
+      try {
+        await reviewCapFallback(admin, rec)
+      } catch (e) {
+        console.error('review-cap v4 fallback failed:', e)
+      }
+    }
+  }
+}
+
+// After a v5 thank-you is capped (131049) post-acceptance, send the utility v4
+// thank-you instead, and — in once/interval modes — clear the patient's
+// "last asked" stamp so they're asked again next cycle.
+//
+// Safety:
+//   • needs patient_id + visit_id to rebuild (older rows without them are
+//     skipped — nothing to resend from);
+//   • idempotent: if a v4 thank-you was already logged for this visit, do
+//     nothing (guards against races / duplicate receipts);
+//   • the v4 send goes through sendVisitThankYou, so it respects the messaging
+//     controls (automated_sends_enabled + test mode) exactly like a normal send;
+//   • bypasses the once-per-date dedup by calling the sender directly, not the
+//     sendVisitWhatsApp action.
+async function reviewCapFallback(
+  admin: ReturnType<typeof createAdminClient>,
+  rec: { id: string; patient_id: string | null; visit_id: string | null }
+): Promise<void> {
+  if (!rec.patient_id || !rec.visit_id) {
+    console.warn(`131049 fallback skipped (missing patient_id/visit_id) for message_log ${rec.id}`)
+    return
+  }
+
+  // Idempotency: already rebuilt a v4 thank-you for this visit? Then stop.
+  const { data: existing } = await admin
+    .from('message_log')
+    .select('id')
+    .eq('visit_id', rec.visit_id)
+    .eq('kind', 'thankyou')
+    .eq('template_name', 'olu_visit_thankyou_v4')
+    .limit(1)
+  if (existing && existing.length > 0) return
+
+  const { data: patient } = await admin
+    .from('patients')
+    .select('full_name, first_name, phone')
+    .eq('id', rec.patient_id)
+    .single()
+  const { data: visit } = await admin
+    .from('visit_records')
+    .select('follow_up_date')
+    .eq('id', rec.visit_id)
+    .single()
+  if (!patient?.phone) {
+    console.warn(`131049 fallback: no phone for patient ${rec.patient_id}`)
+    return
+  }
+
+  // Send utility v4 (no review link). Respects messaging controls internally.
+  await sendVisitThankYou({
+    patientName: patient.full_name,
+    patientFirstName: patient.first_name,
+    patientPhone: patient.phone,
+    followUpDate: visit?.follow_up_date ?? null,
+    withReviewLink: false,
+    patientId: rec.patient_id,
+    visitId: rec.visit_id,
+  })
+
+  // In once/interval modes, clear "last asked" so the capped patient is asked
+  // again next cycle. In 'always' mode there's nothing to clear (the stamp is
+  // only informational there). Cleared regardless of the v4 send outcome — the
+  // review ask didn't land, so it shouldn't count as asked.
+  const settings = await getSettings()
+  if (settings.review_link_mode === 'once' || settings.review_link_mode === 'interval') {
+    await admin
+      .from('patients')
+      .update({ review_request_sent_at: null })
+      .eq('id', rec.patient_id)
   }
 }
 

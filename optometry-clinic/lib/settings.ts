@@ -10,11 +10,22 @@
 import { createClient } from '@supabase/supabase-js'
 import { normalizePhone } from '@/lib/phone-utils'
 
+// How the post-visit thank-you decides whether to include the Google review
+// link. The link lives in the MARKETING template (v5); without it the thank-you
+// uses the UTILITY template (v4). Admin-controlled so we can dial review asks
+// down later to save on the marketing cap.
+//   'always'   — every thank-you asks for a review (default)
+//   'once'     — only the first thank-you per patient (review_request_sent_at null)
+//   'interval' — ask again once it's been review_link_interval_days since last asked
+export type ReviewLinkMode = 'always' | 'once' | 'interval'
+
 export type AppSettings = {
   ai_enabled: boolean               // Iris replies to inbound WhatsApp messages
   automated_sends_enabled: boolean  // thank-yous + appointment reminders fire
   test_mode: boolean                // when true, ONLY test_numbers receive anything
   test_numbers: string[]            // allowlist (any format; matched loosely)
+  review_link_mode: ReviewLinkMode  // when the thank-you includes the review link
+  review_link_interval_days: number // N for 'interval' mode
 }
 
 // Safe defaults. If the table read ever fails, we FAIL OPEN to normal operation
@@ -25,6 +36,10 @@ const DEFAULTS: AppSettings = {
   automated_sends_enabled: true,
   test_mode: false,
   test_numbers: [],
+  // Default: keep asking every visit (matches today's behaviour before this
+  // setting existed — the review ask is on). Switch to 'once'/'interval' later.
+  review_link_mode: 'always',
+  review_link_interval_days: 90,
 }
 
 function adminClient() {
@@ -57,6 +72,17 @@ export async function getSettings(): Promise<AppSettings> {
       test_numbers: Array.isArray(map.get('test_numbers'))
         ? (map.get('test_numbers') as string[])
         : DEFAULTS.test_numbers,
+      review_link_mode:
+        map.get('review_link_mode') === 'always' ||
+        map.get('review_link_mode') === 'once' ||
+        map.get('review_link_mode') === 'interval'
+          ? (map.get('review_link_mode') as ReviewLinkMode)
+          : DEFAULTS.review_link_mode,
+      review_link_interval_days:
+        typeof map.get('review_link_interval_days') === 'number' &&
+        (map.get('review_link_interval_days') as number) > 0
+          ? Math.floor(map.get('review_link_interval_days') as number)
+          : DEFAULTS.review_link_interval_days,
     }
   } catch (err) {
     console.error('getSettings failed, using defaults:', err)

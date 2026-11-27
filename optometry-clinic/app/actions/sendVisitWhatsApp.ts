@@ -3,7 +3,7 @@
 // app/actions/sendVisitWhatsApp.ts
 //
 // THE single shared action for the post-visit "thank-you + next appointment"
-// send (utility template olu_visit_thankyou_v4). Callable from:
+// send. Callable from:
 //   • the new-visit save (NewVisitForm)
 //   • the edit-visit save (EditVisitForm)
 //   • a manual "send thank-you" button (Phase 2)
@@ -16,22 +16,24 @@
 //      patient + same appointment date. Keyed on `thankyou_sent_for_date`: the
 //      DATE a thank-you was actually sent FOR (recorded at send time). Dedup is
 //      simply "does any visit for this patient have thankyou_sent_for_date =
-//      targetDate?" This is fully server-authoritative and needs NO client-side
-//      date comparison (the previous approach compared the incoming date to the
-//      client's STALE originally-loaded value and re-sent on every re-save):
-//        • re-saving the same date  -> row already has that sent-for-date -> skip
-//        • a genuinely new/changed date -> no row has it yet -> send
-//        • a 2nd same-day visit, same date -> the 1st visit's row has it -> skip
-//      No clearing is ever required, so a re-save can never wipe the marker.
+//      targetDate?" Fully server-authoritative, needs NO client-side date
+//      comparison, and a re-save can never wipe the marker.
 //      (`thankyou_sent_at` is kept purely as an audit timestamp of WHEN.)
 //   3. Messaging controls (automated_sends_enabled + test-mode allowlist) are
 //      enforced inside sendVisitThankYou.
-//
-// NOTE: `thankyou_sent_for_date` is an additive migration (see supabase/
-// migrations). `thankyou_sent_at` already existed.
+//   4. REVIEW LINK (admin setting "Review link in thank-you"): decides whether
+//      this thank-you asks for a Google review (template v5) or not (v4):
+//        • 'always'   — always ask
+//        • 'once'     — ask only if the patient has never been asked
+//        • 'interval' — ask again once it's been N days since last asked
+//      We stamp patients.review_request_sent_at ("last asked") ONLY when the
+//      review link actually went out (v5 accepted). If v5 was capped/failed and
+//      fell back to v4, we do NOT stamp, so the patient is asked again next time.
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { sendVisitThankYou } from '@/lib/whatsapp'
+import { getSettings } from '@/lib/settings'
 
 export type ThankYouResult = {
   success: boolean
@@ -39,6 +41,22 @@ export type ThankYouResult = {
   // true when we deliberately did not send because one already went out for this
   // patient + appointment date (lets callers distinguish "blocked" from "failed").
   alreadySent?: boolean
+}
+
+// Decide whether THIS thank-you should carry the review link, from the admin
+// setting + when the patient was last asked.
+function shouldAskForReview(
+  mode: 'always' | 'once' | 'interval',
+  intervalDays: number,
+  lastAskedAt: string | null
+): boolean {
+  if (mode === 'always') return true
+  if (lastAskedAt == null) return true          // never asked → ask (once + interval)
+  if (mode === 'once') return false             // asked before → never again
+  // interval: ask again only once enough time has passed since last asked.
+  const last = new Date(lastAskedAt).getTime()
+  if (Number.isNaN(last)) return true
+  return Date.now() - last >= intervalDays * 24 * 60 * 60 * 1000
 }
 
 export async function sendVisitWhatsApp(
@@ -49,7 +67,7 @@ export async function sendVisitWhatsApp(
 
   const { data: patient, error: patientError } = await supabase
     .from('patients')
-    .select('full_name, first_name, phone')
+    .select('full_name, first_name, phone, review_request_sent_at')
     .eq('id', patientId)
     .single()
 
@@ -88,10 +106,6 @@ export async function sendVisitWhatsApp(
   }
 
   // -- Guard 2: once-only (patient + appointment date) -------------------------
-  // Has a thank-you already gone out for THIS patient FOR THIS date — on this
-  // visit (a re-save) or any sibling visit (a second same-day visit)? Keyed on
-  // the recorded sent-for-date, so this never depends on client state and a
-  // re-save can never wipe it. If found, don't send again.
   const { data: alreadySentRows, error: dedupError } = await supabase
     .from('visit_records')
     .select('id')
@@ -110,25 +124,48 @@ export async function sendVisitWhatsApp(
     }
   }
 
+  // -- Review-link decision ----------------------------------------------------
+  const settings = await getSettings()
+  const withReviewLink = shouldAskForReview(
+    settings.review_link_mode,
+    settings.review_link_interval_days,
+    patient.review_request_sent_at ?? null
+  )
+
   // -- Send --------------------------------------------------------------------
   const result = await sendVisitThankYou({
     patientName: patient.full_name,
     patientFirstName: patient.first_name,
     patientPhone: patient.phone,
     followUpDate: visit.follow_up_date,
+    withReviewLink,
+    patientId,
+    visitId,
   })
 
-  // -- Stamp on success so the once-only guard holds next time -----------------
+  // -- Stamp on success so the guards hold next time ---------------------------
   // Only stamp on a real success; a disabled/test-mode/API failure stays
   // unstamped so a later retry can still send.
   if (result.success) {
     await supabase
       .from('visit_records')
       .update({
-        thankyou_sent_for_date: appointmentDate,       // dedup key
-        thankyou_sent_at: new Date().toISOString(),     // audit: when
+        thankyou_sent_for_date: appointmentDate,     // dedup key
+        thankyou_sent_at: new Date().toISOString(),   // audit: when
       })
       .eq('id', visitId)
+
+    // Stamp "last asked" ONLY when the review link actually went out (v5
+    // accepted). A v4 fallback (capped/failed v5) leaves this null/unchanged so
+    // the patient is asked again next time. Written with the service-role client
+    // so the stamp can't be silently dropped by RLS — it's a system marker the
+    // once/interval modes depend on.
+    if (result.reviewLinkSent) {
+      await createAdminClient()
+        .from('patients')
+        .update({ review_request_sent_at: new Date().toISOString() })
+        .eq('id', patientId)
+    }
   }
 
   return result

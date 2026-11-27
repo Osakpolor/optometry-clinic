@@ -349,79 +349,73 @@ export async function sendAppointmentReminderTemplate({
   }
 }
 
-// ── Post-visit thank-you TEMPLATE (olu_visit_thankyou_v4) ─────────────────────
-// PURE UTILITY — no review link. This is deliberate: a review link makes Meta
-// reclassify the template as MARKETING, and Marketing sends get silently
-// dropped by the per-user marketing cap (error 131049) — which is exactly what
-// v5 kept hitting in production. Utility delivers reliably and isn't subject to
-// that cap. The review ask now lives with Iris, conversationally, in free-form
-// chat (see prompts/olu-eye-clinic.md → INVITING A GOOGLE REVIEW). Two body params:
-//   {{1}} = patient name
-//   {{2}} = next appointment date, "July 28th, 2026" style
+// ── Post-visit thank-you TEMPLATES (v5 with review link / v4 without) ──────────
+// Two approved templates, same "thank you + next appointment" shape:
+//   • olu_visit_thankyou_v4  UTILITY   — no review link. Delivers reliably and
+//     isn't subject to the marketing cap.
+//   • olu_visit_thankyou_v5  MARKETING — adds the Google review link as {{3}}.
+//     Being Marketing, it CAN be silently dropped by the per-user marketing cap
+//     (error 131049), either returned at the API call or later via a webhook
+//     delivery receipt.
+//
+// The caller passes `withReviewLink` (decided from the admin "Review link in
+// thank-you" setting). When true we try v5; if v5 fails at the API FOR ANY
+// REASON (incl. 131049), we immediately fall back to v4 IN THE SAME CALL so the
+// patient still gets their next-appointment message. The return says which
+// template actually went out and whether the review link was sent, so the
+// caller only stamps "last asked" when the link truly went (reviewLinkSent).
+//
+// A 131049 that arrives LATER as a webhook receipt (Meta accepted, then capped)
+// is handled in the webhook, which rebuilds a v4 thank-you from the visit.
+//
+// Body params:  v4 → {{1}} name, {{2}} appointment
+//               v5 → {{1}} name, {{2}} appointment, {{3}} review link
 
-export async function sendVisitThankYou({
-  patientName,
-  patientFirstName = null,
-  patientPhone,
-  followUpDate,
-}: {
-  patientName: string
-  patientFirstName?: string | null
-  patientPhone: string
-  followUpDate: string | null
-}): Promise<{ success: boolean; error?: string }> {
-  const to = formatNigerianPhone(patientPhone)
-  if (!to) {
-    return { success: false, error: `Unrecognised phone format: ${patientPhone}` }
-  }
+const REVIEW_LINK = () =>
+  process.env.GOOGLE_REVIEW_LINK ?? 'https://olueyeclinic.com/review'
 
-  // Messaging controls: automated sends can be paused globally, and in test
-  // mode only allowlisted numbers receive anything.
-  const settings = await getSettings()
-  if (!settings.automated_sends_enabled) {
-    console.log(`🔇 Thank-you skipped for ${patientPhone} (automated sends disabled)`)
-    return { success: false, error: 'Automated sends are disabled' }
-  }
-  if (!isAllowedRecipient(patientPhone, settings)) {
-    console.log(`🔇 Thank-you skipped for ${patientPhone} (test mode)`)
-    return { success: false, error: 'Recipient not in test allowlist (test mode on)' }
-  }
+export type ThankYouTemplate = 'olu_visit_thankyou_v5' | 'olu_visit_thankyou_v4'
 
-  // Format as "July 28th, 2026" (month name, ordinal day, year)
+export type SendThankYouResult = {
+  success: boolean
+  error?: string
+  templateUsed: ThankYouTemplate | null // what actually went out (null if nothing did)
+  reviewLinkSent: boolean                // true only when v5 was accepted
+}
+
+// Format as "July 28th, 2026" (month name, ordinal day, year)
+function thankYouLongDate(dateStr: string): string {
   function ordinal(n: number): string {
     const s = ['th', 'st', 'nd', 'rd']
     const v = n % 100
     return n + (s[(v - 20) % 10] ?? s[v] ?? s[0])
   }
-  function formatLongDate(dateStr: string): string {
-    const d = new Date(dateStr + 'T12:00:00')
-    const month = d.toLocaleDateString('en-US', { month: 'long' })
-    return `${month} ${ordinal(d.getDate())}, ${d.getFullYear()}`
-  }
+  const d = new Date(dateStr + 'T12:00:00')
+  const month = d.toLocaleDateString('en-US', { month: 'long' })
+  return `${month} ${ordinal(d.getDate())}, ${d.getFullYear()}`
+}
 
-  const appointmentText = followUpDate
-    ? formatLongDate(followUpDate)
-    : 'to be scheduled — please contact the clinic'
-
-  // Stored first name when present; otherwise the full name (not a token).
-  const greetName = greetingName({ firstName: patientFirstName, fullName: patientName }) || patientName
-
+// Send ONE thank-you template and record it (message_log + the inbox thread
+// line). Returns ok/err only; the orchestration (v5→v4 fallback) lives in
+// sendVisitThankYou. `conversationText` is what we store as the sent bubble,
+// matching exactly how the chosen template renders on the patient's phone.
+async function postThankYouTemplate(opts: {
+  to: string
+  patientPhone: string
+  templateName: ThankYouTemplate
+  parameters: { type: 'text'; text: string }[]
+  conversationText: string
+  patientId: string | null
+  visitId: string | null
+}): Promise<{ ok: boolean; error?: string }> {
   const body = {
     messaging_product: 'whatsapp',
-    to,
+    to: opts.to,
     type: 'template',
     template: {
-      name: 'olu_visit_thankyou_v4',
+      name: opts.templateName,
       language: { code: 'en' },
-      components: [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: greetName },
-            { type: 'text', text: appointmentText },
-          ],
-        },
-      ],
+      components: [{ type: 'body', parameters: opts.parameters }],
     },
   }
 
@@ -436,44 +430,150 @@ export async function sendVisitThankYou({
     })
     const data = await response.json()
     if (!response.ok || data.error) {
-      console.error('sendVisitThankYou error:', data.error ?? data)
+      console.error(`${opts.templateName} error:`, data.error ?? data)
       await logMessageSend({
-        phone: patientPhone,
+        phone: opts.patientPhone,
         kind: 'thankyou',
-        templateName: 'olu_visit_thankyou_v4',
+        templateName: opts.templateName,
+        patientId: opts.patientId,
+        visitId: opts.visitId,
         outcome: { ok: false, ...metaErrorFields(data) },
       })
-      return { success: false, error: data.error?.message ?? 'WhatsApp API error' }
+      return { ok: false, error: data.error?.message ?? 'WhatsApp API error' }
     }
     const waMessageId: string | null = data?.messages?.[0]?.id ?? null
     await logMessageSend({
-      phone: patientPhone,
+      phone: opts.patientPhone,
       kind: 'thankyou',
-      templateName: 'olu_visit_thankyou_v4',
+      templateName: opts.templateName,
+      patientId: opts.patientId,
+      visitId: opts.visitId,
       outcome: { ok: true, waMessageId },
     })
-    // Log the full human-readable message exactly as the olu_visit_thankyou_v4
-    // template renders it on the patient's phone (newlines are fine here — this
-    // is our own DB, not a template param).
-    await logWhatsAppMessage(
-      patientPhone,
-      'system',
-      `Dear ${greetName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
-      `*Your next appointment is ${appointmentText}*\n\n` +
-      `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`,
-      waMessageId
-    )
-    return { success: true }
+    await logWhatsAppMessage(opts.patientPhone, 'system', opts.conversationText, waMessageId)
+    return { ok: true }
   } catch (err: any) {
-    console.error('sendVisitThankYou network error:', err)
+    console.error(`${opts.templateName} network error:`, err)
     await logMessageSend({
-      phone: patientPhone,
+      phone: opts.patientPhone,
       kind: 'thankyou',
-      templateName: 'olu_visit_thankyou_v4',
+      templateName: opts.templateName,
+      patientId: opts.patientId,
+      visitId: opts.visitId,
       outcome: { ok: false, errorCode: null, errorTitle: 'Network error', errorDetails: err?.message ?? null },
     })
-    return { success: false, error: err.message ?? 'Network error' }
+    return { ok: false, error: err?.message ?? 'Network error' }
   }
+}
+
+export async function sendVisitThankYou({
+  patientName,
+  patientFirstName = null,
+  patientPhone,
+  followUpDate,
+  withReviewLink = false,
+  patientId = null,
+  visitId = null,
+}: {
+  patientName: string
+  patientFirstName?: string | null
+  patientPhone: string
+  followUpDate: string | null
+  withReviewLink?: boolean
+  patientId?: string | null
+  visitId?: string | null
+}): Promise<SendThankYouResult> {
+  const to = formatNigerianPhone(patientPhone)
+  if (!to) {
+    return { success: false, error: `Unrecognised phone format: ${patientPhone}`, templateUsed: null, reviewLinkSent: false }
+  }
+
+  // Messaging controls: automated sends can be paused globally, and in test
+  // mode only allowlisted numbers receive anything. (The webhook 131049
+  // fallback calls this too, so it respects these controls exactly like a
+  // normal send.)
+  const settings = await getSettings()
+  if (!settings.automated_sends_enabled) {
+    console.log(`🔇 Thank-you skipped for ${patientPhone} (automated sends disabled)`)
+    return { success: false, error: 'Automated sends are disabled', templateUsed: null, reviewLinkSent: false }
+  }
+  if (!isAllowedRecipient(patientPhone, settings)) {
+    console.log(`🔇 Thank-you skipped for ${patientPhone} (test mode)`)
+    return { success: false, error: 'Recipient not in test allowlist (test mode on)', templateUsed: null, reviewLinkSent: false }
+  }
+
+  const appointmentText = followUpDate
+    ? thankYouLongDate(followUpDate)
+    : 'to be scheduled — please contact the clinic'
+
+  // Stored first name when present; otherwise the full name (not a token).
+  const greetName = greetingName({ firstName: patientFirstName, fullName: patientName }) || patientName
+
+  const v4Text =
+    `Dear ${greetName}, thank you for choosing Olu Eye Clinic for your eye care.\n\n` +
+    `*Your next appointment is ${appointmentText}*\n\n` +
+    `We look forward to seeing you. God bless you. - Olu Eye Clinic Team`
+
+  // --- Review link requested: try v5 first ----------------------------------
+  if (withReviewLink) {
+    const reviewLink = REVIEW_LINK()
+    const v5Text =
+      `Dear ${greetName},\n\n` +
+      `Thank you for trusting us with your eye health.\n\n` +
+      `*Your next appointment is on ${appointmentText}.*\n\n` +
+      `We'd love to hear about your experience at the clinic! Please leave us a review: ${reviewLink}\n\n` +
+      `Enjoy the rest of your day!\n\n` +
+      `Olu Eye Clinic.`
+
+    const v5 = await postThankYouTemplate({
+      to, patientPhone,
+      templateName: 'olu_visit_thankyou_v5',
+      parameters: [
+        { type: 'text', text: greetName },
+        { type: 'text', text: appointmentText },
+        { type: 'text', text: reviewLink },
+      ],
+      conversationText: v5Text,
+      patientId, visitId,
+    })
+    if (v5.ok) {
+      return { success: true, templateUsed: 'olu_visit_thankyou_v5', reviewLinkSent: true }
+    }
+
+    // v5 failed at the API (incl. 131049 marketing cap). Fall back to utility v4
+    // so the patient still gets their next-appointment message. Do NOT report
+    // reviewLinkSent — the caller must not stamp "last asked", so the patient is
+    // asked again next time.
+    console.warn(`v5 thank-you failed for ${patientPhone} (${v5.error}); falling back to v4`)
+    const v4 = await postThankYouTemplate({
+      to, patientPhone,
+      templateName: 'olu_visit_thankyou_v4',
+      parameters: [
+        { type: 'text', text: greetName },
+        { type: 'text', text: appointmentText },
+      ],
+      conversationText: v4Text,
+      patientId, visitId,
+    })
+    return v4.ok
+      ? { success: true, templateUsed: 'olu_visit_thankyou_v4', reviewLinkSent: false }
+      : { success: false, error: v4.error, templateUsed: null, reviewLinkSent: false }
+  }
+
+  // --- No review link: send utility v4 directly -----------------------------
+  const v4 = await postThankYouTemplate({
+    to, patientPhone,
+    templateName: 'olu_visit_thankyou_v4',
+    parameters: [
+      { type: 'text', text: greetName },
+      { type: 'text', text: appointmentText },
+    ],
+    conversationText: v4Text,
+    patientId, visitId,
+  })
+  return v4.ok
+    ? { success: true, templateUsed: 'olu_visit_thankyou_v4', reviewLinkSent: false }
+    : { success: false, error: v4.error, templateUsed: null, reviewLinkSent: false }
 }
 
 // ── Post-visit clinical summary TEMPLATE (olu_eye_clinic_visit_summary_v2) ─────

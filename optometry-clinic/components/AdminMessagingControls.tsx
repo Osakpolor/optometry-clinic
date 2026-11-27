@@ -13,11 +13,15 @@ import {
   updateMessagingSettings,
 } from '@/app/actions/messagingSettings'
 
+type ReviewLinkMode = 'always' | 'once' | 'interval'
+
 type Settings = {
   ai_enabled: boolean
   automated_sends_enabled: boolean
   test_mode: boolean
   test_numbers: string[]
+  review_link_mode: ReviewLinkMode
+  review_link_interval_days: number
 }
 
 export function AdminMessagingControls() {
@@ -26,6 +30,7 @@ export function AdminMessagingControls() {
   const [saving, setSaving] = useState(false)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [numbersDraft, setNumbersDraft] = useState('')
+  const [daysDraft, setDaysDraft] = useState('90')
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,6 +41,7 @@ export function AdminMessagingControls() {
       if (res.settings) {
         setSettings(res.settings)
         setNumbersDraft(res.settings.test_numbers.join('\n'))
+        setDaysDraft(String(res.settings.review_link_interval_days))
       } else {
         setError(res.error ?? 'Could not load settings')
       }
@@ -71,6 +77,17 @@ export function AdminMessagingControls() {
       .map(s => s.trim())
       .filter(Boolean)
     apply({ test_numbers: parsed })
+  }
+
+  function saveDays() {
+    const n = Math.floor(Number(daysDraft))
+    if (!Number.isFinite(n) || n < 1) {
+      // Reject junk — snap the field back to the saved value.
+      setDaysDraft(String(settings?.review_link_interval_days ?? 90))
+      return
+    }
+    setDaysDraft(String(n))
+    if (n !== settings?.review_link_interval_days) apply({ review_link_interval_days: n })
   }
 
   if (loading) {
@@ -132,6 +149,61 @@ export function AdminMessagingControls() {
             disabled={saving}
             onChange={v => apply({ automated_sends_enabled: v })}
           />
+
+          {/* Review link in the thank-you: always / once per patient / every N days */}
+          <div className="rounded-md border border-gray-100 bg-gray-50 p-3">
+            <div className="text-sm font-medium text-gray-800">Review link in thank-you</div>
+            <p className="mb-2 text-xs text-gray-500">
+              When the post-visit thank-you asks for a Google review. “Always” asks every
+              visit; the others ask less often to spare the marketing cap.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['always', 'Always'],
+                ['once', 'Once per patient'],
+                ['interval', 'Every N days'],
+              ] as [ReviewLinkMode, string][]).map(([value, label]) => {
+                const active = settings.review_link_mode === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => apply({ review_link_mode: value })}
+                    className={
+                      'rounded-md border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ' +
+                      (active
+                        ? 'border-[#0d7b5f] bg-[#0d7b5f] text-white'
+                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400')
+                    }
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {settings.review_link_mode === 'interval' && (
+              <div className="mt-3 flex items-center gap-2">
+                <label htmlFor="review-days" className="text-sm text-gray-700">
+                  Ask again every
+                </label>
+                <input
+                  id="review-days"
+                  type="number"
+                  min={1}
+                  value={daysDraft}
+                  disabled={saving}
+                  onChange={e => setDaysDraft(e.target.value)}
+                  onBlur={saveDays}
+                  onKeyDown={e => { if (e.key === 'Enter') saveDays() }}
+                  className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-[#0d7b5f] focus:outline-none focus:ring-1 focus:ring-[#0d7b5f]"
+                />
+                <span className="text-sm text-gray-700">days</span>
+              </div>
+            )}
+          </div>
+
           <Toggle
             label="Test mode"
             help="When on, ONLY the numbers below receive Iris replies or automated messages. Real patients get nothing — use for short testing windows, then turn off."

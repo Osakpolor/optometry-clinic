@@ -28,6 +28,18 @@ function timeLabel(iso: string) {
     : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
+// Human label for a message_log delivery status on an outgoing bubble.
+// 'accepted' (we called the API, no receipt yet) reads as "Sent" to staff.
+function deliveryWord(status: string): string | null {
+  switch (status) {
+    case 'accepted':
+    case 'sent':      return 'Sent'
+    case 'delivered': return 'Delivered'
+    case 'read':      return 'Read'
+    default:          return null
+  }
+}
+
 export function ConversationsView({
   threads: initialThreads,
   access,
@@ -386,7 +398,19 @@ export function ConversationsView({
                     <div key={m.id} className={`flex ${isUser ? 'justify-start' : 'justify-end'}`}>
                       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap ${bubble}`}>
                         <div>{m.message}</div>
-                        <div className={`text-[10px] mt-1 ${meta}`}>{who} · {timeLabel(m.created_at)}</div>
+                        <div className={`text-[10px] mt-1 ${meta}`}>
+                          {who} · {timeLabel(m.created_at)}
+                          {/* Delivery status — outgoing lines only, when we have
+                              a message_log match. Older/unmatched lines show none. */}
+                          {!isUser && m.delivery_status && m.delivery_status !== 'failed' && deliveryWord(m.delivery_status) && (
+                            <> · {deliveryWord(m.delivery_status)}</>
+                          )}
+                          {!isUser && m.delivery_status === 'failed' && (
+                            <span className="ml-1 inline-block rounded bg-red-500 px-1.5 py-0.5 font-medium text-white">
+                              Failed{m.delivery_error ? `: ${m.delivery_error}` : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )

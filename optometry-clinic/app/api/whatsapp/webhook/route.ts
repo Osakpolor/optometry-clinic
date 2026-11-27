@@ -132,6 +132,58 @@ async function applyBroadcastStatuses(statuses: any[]): Promise<void> {
   }
 }
 
+// Forward-only progression for message_log, mirroring the broadcast ranks.
+// accepted < sent < delivered < read. 'failed' is terminal and may only be
+// entered from a not-yet-delivered state — a message already delivered/read
+// has demonstrably reached the handset, so a stray late failure never
+// downgrades it.
+const MSG_LOG_RANK: Record<string, number> = {
+  accepted: 0, sent: 1, delivered: 2, read: 3,
+}
+
+// Apply Meta delivery-status receipts to message_log (the NON-broadcast sends:
+// thank-yous, reminders, Iris replies, summaries, bookings). A given
+// wa_message_id lives in exactly one of message_log / broadcast_recipients, so
+// this and applyBroadcastStatuses never touch the same row. Receipts that match
+// neither table simply fall through.
+async function applyMessageLogStatuses(statuses: any[]): Promise<void> {
+  const admin = createAdminClient()
+
+  for (const s of statuses) {
+    const waId = s?.id
+    const incoming = s?.status // 'sent' | 'delivered' | 'read' | 'failed'
+    if (!waId || !incoming) continue
+    if (!['sent', 'delivered', 'read', 'failed'].includes(incoming)) continue
+
+    const { data: rows } = await admin
+      .from('message_log')
+      .select('id, status')
+      .eq('wa_message_id', waId)
+      .limit(1)
+    const rec = rows?.[0]
+    if (!rec) continue // not a tracked non-broadcast send
+    if (rec.status === 'failed') continue // terminal
+
+    const update: Record<string, any> = { status_updated_at: new Date().toISOString() }
+
+    if (incoming === 'failed') {
+      // Don't fail a message that already reached the handset.
+      if ((MSG_LOG_RANK[rec.status] ?? 0) >= MSG_LOG_RANK.delivered) continue
+      const err = Array.isArray(s.errors) ? s.errors[0] : undefined
+      update.status = 'failed'
+      update.error_code = err?.code ?? null
+      update.error_title = err?.title ?? null
+      update.error_details = err?.error_data?.details ?? null
+    } else {
+      // Forward-only among accepted → sent → delivered → read.
+      if ((MSG_LOG_RANK[incoming] ?? 0) <= (MSG_LOG_RANK[rec.status] ?? 0)) continue
+      update.status = incoming
+    }
+
+    await admin.from('message_log').update(update).eq('id', rec.id)
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const mode      = searchParams.get('hub.mode')
@@ -166,6 +218,13 @@ export async function POST(req: NextRequest) {
         await applyBroadcastStatuses(statuses)
       } catch (e) {
         console.error('broadcast delivery-status update failed:', e)
+      }
+      // Update message_log for non-broadcast sends. Independent try/catch so a
+      // failure here can't suppress the broadcast update above, or vice versa.
+      try {
+        await applyMessageLogStatuses(statuses)
+      } catch (e) {
+        console.error('message_log delivery-status update failed:', e)
       }
       return NextResponse.json({ status: 'ok' })
     }
@@ -226,12 +285,15 @@ export async function POST(req: NextRequest) {
       const optOutReply =
         `You've been unsubscribed from Olu Eye Clinic promotional messages. ` +
         `You'll still receive appointment reminders, and you can reply here anytime. - OluEyeClnc`
+      // Send first so we capture Meta's message id, then store the thread line
+      // tagged with it (so its delivery status shows in the inbox).
+      const optOutSend = await sendWhatsAppMessage(fromNumber, optOutReply, { kind: 'other' })
       await supabase.from('whatsapp_conversations').insert({
         phone_number: fromNumber,
         role: 'assistant',
         message: optOutReply,
+        wa_message_id: optOutSend.waMessageId ?? null,
       })
-      await sendWhatsAppMessage(fromNumber, optOutReply)
       console.log(`🚫 Marketing opt-out recorded for ${fromNumber}`)
       return NextResponse.json({ status: 'ok' })
     }
@@ -348,15 +410,22 @@ export async function POST(req: NextRequest) {
       pendingRebook,
     })
 
-    // ── Save Claude's reply ──────────────────────────────────
+    // ── Send to WhatsApp first, so we capture Meta's message id ──
+    // The returned wa_message_id ties this outgoing line to its delivery-status
+    // receipts (sent/delivered/read/failed) in message_log. kind:'iris' marks
+    // it as an AI reply; patientId links it when the sender is a known patient.
+    const irisSend = await sendWhatsAppMessage(fromNumber, reply, {
+      kind: 'iris',
+      patientId: patient?.id ?? null,
+    })
+
+    // ── Save Claude's reply (tagged with the message id for status) ──
     await supabase.from('whatsapp_conversations').insert({
       phone_number: fromNumber,
       role: 'assistant',
       message: reply,
+      wa_message_id: irisSend.waMessageId ?? null,
     })
-
-    // ── Send to WhatsApp ─────────────────────────────────────
-    await sendWhatsAppMessage(fromNumber, reply)
 
     // ── Route: REBOOK from known patient ────────────────────
     // Patients can reschedule as many times as they like.
